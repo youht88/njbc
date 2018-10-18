@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <div id="container"></div>
+    <script type="text/javascript" charset="utf-8">
+      window.onload = function(){console.log("window start")}
+      window.onerror = function(msg, url, line,column,error){  
+        alert("\n错误信息：" + msg+       
+              "\n所在文件：" + url+         
+              "\n错误行号：" + line+
+              "\n错误列号：" + column);      
+        }
+    </script>       
+  </body>
+</html>
