@@ -160,7 +160,7 @@ class TradeForm extends React.Component{
       //message.warn(`trade/${values.inAddr}/${values.outAddr}/${values.amount}`)
       this.setState({data:undefined})
       let path=`${values.inAddr}/${values.outAddr}/${values.amount}`
-      this.handleAjax(encodeURI(`trade/${path}`),{script:values.script},
+      this.handleAjax(encodeURI(`trade/${path}`),{script:values.script,assets:values.assets},
         (value)=>{
            if (typeof(value)=="object"){
              if (value.errCode)
@@ -216,7 +216,17 @@ class TradeForm extends React.Component{
             )}
           </FormItem>
           <FormItem
-            label="脚本"
+            label="数据"
+          >
+            {getFieldDecorator('assets', {
+              rules: [
+               {required: false, message: 'Please input assets' }],
+            })(
+              <TextArea rows={10} placeholder="input data assets" style={{color:"yellow",fontWeight:"bold",backgroundColor:'blue'}} />
+            )}
+          </FormItem>
+          <FormItem
+            label="合约"
           >
             {getFieldDecorator('script', {
               rules: [
@@ -306,7 +316,7 @@ class GraphForm extends React.Component{
 export default class Home extends React.Component{
   constructor(props) {
     super(props);
-    const port=location.port=='7777'?5000:location.port
+    const port=location.port=='7777'?4000:location.port
     this.state ={url:document.domain + ':' + port}
     this.handleAjax = this.handleAjax.bind(this)
   }
@@ -329,7 +339,8 @@ export default class Home extends React.Component{
       },
       error: (res,status,error)=>{
         // 控制台查看响应文本，排查错误
-        message.error(`${path}错误,请输入正确的地址`);
+        alert(JSON.stringify(error))
+        message.error(`http://${this.state.url}/${path}错误,请输入正确的地址`);
       }
     })
   }

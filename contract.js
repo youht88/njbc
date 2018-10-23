@@ -6,10 +6,10 @@ const logger = utils.logger.getLogger()
 class Contract{
   constructor(script,sandbox={}){
     this.status=0
-    this.compileError=None
-    this.executeError=None
+    this.compileError=null
+    this.executeError=null
     this.script=script
-    this.setSandbox()
+    //this.setSandbox()
   }
   check(){
     //return {"errCode":0,"result":true}

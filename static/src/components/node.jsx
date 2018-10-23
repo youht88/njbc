@@ -10,7 +10,7 @@ const FormItem = Form.Item;
 
 import MyEcharts from './echarts.jsx';
 
-const port = location.port=='7777' ? 5000 : location.port
+const port = location.port=='7777' ? 4000 : location.port
 const node = document.domain + ':' + port
 
 function handleAjax(peer,path,cb){

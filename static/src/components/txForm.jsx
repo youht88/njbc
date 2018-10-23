@@ -116,7 +116,7 @@ export default class TxForm extends React.Component{
     }
   }
   handleAjax(path,cb){
-    const port=location.port=='7777'?5000:location.port
+    const port=location.port=='7777'?4000:location.port
     const url = document.domain + ':' + port
     $.ajax({
       type: 'GET',    // 请求方式
@@ -150,7 +150,7 @@ export default class TxForm extends React.Component{
       }
       this.setState({insData:insData})
       this.setState({outsData:outsData})
-      this.setState({hash:data.hash,timestamp:data.timestamp,script:data.outs[0].script})
+      this.setState({hash:data.hash,timestamp:data.timestamp,script:data.outs[0].script,assets:data.outs[0].assets})
     }
     else {
       message.info("no data")
@@ -159,13 +159,13 @@ export default class TxForm extends React.Component{
   handleSearchBar(){
     let url=this.props.url
     if (url==undefined){
-      const port=location.port=='7777'?5000:location.port
+      const port=location.port=='7777'?4000:location.port
       url = document.domain + ':' + port
     }
     return <WrappedForm url={url} afterSubmit={this.setData.bind(this)}/>
   }
   render(){
-    const {hash,timestamp,insData,outsData,insColumns,outsColumns,script} = this.state
+    const {hash,timestamp,insData,outsData,insColumns,outsColumns,script,assets} = this.state
     if (insData){
       return(
       <div>
@@ -190,7 +190,8 @@ export default class TxForm extends React.Component{
               <Table dataSource={outsData} columns={outsColumns} pagination={false}/>
             </Col>
           </Row>
-          <Alert type="info" description={<pre>{script?script:"No Script"}</pre>}></Alert>
+          <Alert type="info" message="合约:" description={<pre>{script?script:"没有脚本"}</pre>}></Alert>
+          <Alert type="info" message="数据:" description={<pre>{assets?JSON.stringify(assets,null,4):"没有数据"}</pre>}></Alert>
         </Panel>
       </Collapse>
       </div>

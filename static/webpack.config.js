@@ -13,7 +13,7 @@ module.exports={
       filename  : '[name].js',
       chunkFilename: '[name].[chunkhash:8].chunk.js'
     },
-  //mode: "development",
+  mode: "development",
   optimization:{
     splitChunks: {
       chunks: 'initial', // 只对入口文件处理
@@ -65,7 +65,7 @@ module.exports={
   plugins:[
     new HtmlWebpackPlugin({
       title:'webpack HMR test',
-      template:'../templates/index.html'
+      template:'../templates/react.html'
     }),
     new webpack.NamedModulesPlugin(), // 新增
     new webpack.HotModuleReplacementPlugin(), //新增

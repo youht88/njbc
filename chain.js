@@ -321,6 +321,8 @@ class Chain{
   }
   getRangeBlocks(fromIndex,toIndex){
     const maxindex = this.maxindex()
+    fromIndex=parseInt(fromIndex)
+    toIndex=parseInt(toIndex)
     if (toIndex>maxindex) toIndex=maxindex
     if (fromIndex<0 || fromIndex>maxindex) return []
     if (toIndex<fromIndex  || toIndex>maxindex) return []

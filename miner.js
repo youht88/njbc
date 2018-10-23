@@ -1,5 +1,6 @@
 const util=require('util')
 const express = require('express')
+const bodyParser = require('body-parser');
 const app = express();
 const http = require('http').Server(app);
 const ioServer = require('socket.io')(http);
@@ -167,53 +168,36 @@ start()
   .then(()=>console.log("node started."))
   .catch(e=>console.log(e))
 
-/*
-let prevSets=[]
-setInterval(async ()=>{
-  if (node.mining) return
-  if (node.blockSyncing) return
-  node.blockSyncing=true
-  try{
-    let maxindex = node.blockchain.maxindex()
-    let sets,indexes,minindex
-    //sets = [(item["hash"],item["index"],item["nonce"]) for item in node.database["blockpool"].find({"index":{"$gt":maxindex}},{"_id":False,"hash":True,"index":True,"nonce":True})]
-    await global.db.findMany("blockpool",{"index":{"$gt":maxindex}},{"projection":{_id:0,hash:1,index:1,nonce:1}}).then(docs=>{
-        sets = docs     
-    })
-    //check this gap between maxindex+1 and lastest
-    indexes=_.pluck(sets,"index")
-    try{
-      minindex = _.min(indexes)
-    }catch(e){
-      minindex = maxindex + 1
-    }
-    if (maxindex + 1 <= minindex - 1){  
-      if (node.socketioClient){
-        node.emit("getBlocks",(maxindex + 1,minindex - 1))
-      }
-      node.blockSyncing=false
-    }
-    if ((sets.length) >=1 && sets != prevSets){
-      prevSets = sets
-      await node.blockPoolSync()
-    }
-  }catch(e){
-    logger.fatal(e)
-  }
-  node.blockSyncing=false  //放行blocksync
-},2000)    
-*/
+//允许跨域
+var allowCrossDomain = function (req, res, next) {
+ res.header('Access-Control-Allow-Origin', '*');//自定义中间件，设置跨域需要的响应头。
+ next();
+};
+app.use(allowCrossDomain);//运用跨域的中间件
 
 //express router
-app.use(express.static(path.join(__dirname,"/static")))
+app.use(express.static(path.join(__dirname,"/static/dist")))
+app.use(bodyParser.urlencoded({
+  extended: true
+}));
 
+
+
+app.get('/debug',function(req,res){
+  config.debug=true
+  res.end('set debug mode ')
+})
+app.get('/nodebug',function(req,res){
+  config.debug=false
+  res.end('set no debug mode')
+})
 app.get('/', function(req, res){
   console.log("hello")
   res.send("hello")
 });
 
 app.get('/react',function(req,res){
-  res.sendFile(path.join(__dirname, 'templates/react.html'));
+  res.sendFile(path.join(__dirname, 'static/dist/index.html'));
 })
 
 app.get('/bootstrap',function(req,res,next){
@@ -221,8 +205,9 @@ app.get('/bootstrap',function(req,res,next){
   res.sendFile(path.join(__dirname, 'templates/bootstrap.html'));
   next()
 })
-app.get('/bootstrap/node/info',function(req,res){
-  res.send("<pre>ab  cd\nxyz opq</pre>")
+app.get('/bootstrap/test',function(req,res){
+  let json = {"a":1,"b":2,"c":{c1:"x",c2:"y"}}
+  res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
 })
 app.get('/crypto',function(req,res){
   //hashlib
@@ -331,7 +316,10 @@ app.get('/node/info',function(req,res){
     "blockchain.maxindex":node.blockchain.maxindex(),
     "blockchain.maxindex.nonce":node.blockchain.blocks[node.blockchain.maxindex()].nonce    
   }
-  res.send(`<pre>${JSON.stringify(info,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(info,null,4)}</pre>`)
+  else 
+    res.send(info)
 })
 
 //////////////////blockchain interface ///////////////
@@ -339,43 +327,75 @@ app.use('/blockchain',function(req,res,next){
   console.log("blockchain interface")
   next()
 })
+
+app.get('/blockchain/maxindex', function(req,res){
+  const maxindex = node.blockchain.maxindex()
+  res.send(maxindex.toString())
+})
+
 app.get('/blockchain',function(req,res){
   const blocks = node.blockchain.blocks
-  return res.send(`<pre>${JSON.stringify(blocks,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(blocks,null,4)}</pre>`)
+  else 
+    res.send(blocks)
 })
 
 app.get('/blockchain/spv', function(req,res){
   const blockSPV = node.blockchain.getSPV()
-  return res.send(`<pre>${JSON.stringify(blockSPV,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(blockSPV,null,4)}</pre>`)
+  else
+    res.send(blockSPV)
 })
 
 app.get('/blockchain/index/:blockIndex/',function(req,res,next){
   const blockIndex = parseInt(req.params.blockIndex)
   const block = node.blockchain.findBlockByIndex(blockIndex)
-  return res.send(`<pre>${JSON.stringify(block,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(block,null,4)}</pre>`)
+  else
+    res.send(block)
 })
 
 app.get('/blockchain/hash/:blockHash/',function(req,res,next){
   const block = node.blockchain.findBlockByHash(req.params.blockHash)
-  return res.send(`<pre>${JSON.stringify(block,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(block,null,4)}</pre>`)
+  else
+    res.send(block)
 })
 
 app.get('/blockchain/:fromIndex/:toIndex',function(req,res,next){
-  const blocks = node.blockchain.getRangeBlocks(req.params.fromIndex,req.params.toIndex)
-  return res.send(`<pre>${JSON.stringify(blocks,null,4)}</pre>`)
+  const fromIndex = parseInt(req.params.fromIndex)
+  const toIndex   = parseInt(req,params.toIndex)
+  const blocks = node.blockchain.getRangeBlocks(fromIndex,toIndex)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(blocks,null,4)}</pre>`)
+  else
+    res.send(blocks)
 })
 ///////////////utxo interface/////////////////
 app.get('/utxo/main/:address/',function(req,res){
   const utxo = node.blockchain.utxo.findUTXO(req.params.address)
-  return res.send(`<pre>${JSON.stringify(utxo,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(utxo,null,4)}</pre>`)
+  else
+    res.send(utxo)
 })
 app.get('/utxo/trade/:address/',function(req,res){
   const utxo = node.tradeUTXO.findUTXO(req.params.address)
-  return res.send(`<pre>${JSON.stringify(utxo,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(utxo,null,4)}</pre>`)
+  else
+    res.send(utxo)
 })
 app.get('/utxo/isolate/:address/',function(req,res){
   const utxo = node.isolateUTXO.findUTXO(req.params.address)
-  return res.send(`<pre>${JSON.stringify(utxo,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(utxo,null,4)}</pre>`)
+  else
+    res.send(utxo)
 })
 app.get('/utxo/reset/',function(req,res){
   const utxoSet = node.resetUTXO()
@@ -385,19 +405,28 @@ app.get('/utxo/get/main',function(req,res){
   const utxoSet = node.blockchain.utxo.utxoSet
   const utxoSummary = node.blockchain.utxo.getSummary()
   const json = {"summary":utxoSummary,"utxoSet":utxoSet}
-  return res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
+  else
+    res.send(json)
 })
 app.get('/utxo/get/isolate',function(req,res){
   const utxoSet = node.isolateUTXO.utxoSet
   const utxoSummary = node.isolateUTXO.getSummary()
   const json = {"summary":utxoSummary,"utxoSet":utxoSet}
-  return res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
+  else
+    res.send(json)
 })
 app.get('/utxo/get/trade',function(req,res){
   const utxoSet = node.tradeUTXO.utxoSet
   const utxoSummary = node.tradeUTXO.getSummary()
   const json = {"summary":utxoSummary,"utxoSet":utxoSet}
-  return res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
+  else
+    res.send(json)
 })
 
 //////////wallet interface ////////////////
@@ -406,20 +435,37 @@ app.get('/wallet/me',function(req,res){
   const json = {"address":node.wallet.address,
               "pubkey":node.wallet.pubkey64D,
               "balance":balance}
-  return res.send(`</pre>${JSON.stringify(json,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`</pre>${JSON.stringify(json,null,4)}</pre>`)
+  else
+    res.send(json)
 })
+
 app.get('/wallet/:address',async (req,res)=>{
   const address = req.params.address
   let wallet=new Wallet()
   if (address.length==64){
-    await wallet.chooseByAddress(address)
+    await wallet.chooseByAddress(address).catch(e=>res.end(e.stack))
   }else{
-    wallet = await new Wallet(address)
+    wallet = await new Wallet(address).catch(e=>res.end(e.stack))
   }
   const balance = node.blockchain.utxo.getBalance(wallet.address)
   const json = {"address":wallet.address,"pubkey":wallet.pubkey64D,"blance":balance}
-  return res.send(`</pre>${JSON.stringify(json,null,4)}</pre>`)
+  if (config.debug)
+    res.send(`</pre>${JSON.stringify(json,null,4)}</pre>`)
+  else
+    res.send(json)
 })
+
+app.get('/wallet/getAddress/:name',async function(req,res){
+  let name = req.params.name
+  if (name =='me'){
+    name=node.me
+  }
+  wallet = await new Wallet(name)
+  res.send(wallet.address)
+})
+
 app.get('/wallet/create/:name',async (req,res,next)=>{
   const name = req.params.name
   let wallet
@@ -438,14 +484,24 @@ app.get('/wallet/create/:name',async (req,res,next)=>{
 })
 ////////////// trade interface /////////////
 app.post('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
-  /*script = request.form.get('script',default="")
-  response =node.tradeTest(nameFrom,nameTo,float(amount),script)
-  errCode = response.get("errCode")
-  if not errCode:
-    return jsonify(response)
-  else:
-    return response.get("errText")
- */
+  const script = req.body.script
+  let assets = req.body.assets
+  try{
+    assets = JSON.parse(assets)
+  }catch(e){
+  }
+  const nameFrom = req.params.nameFrom
+  const nameTo   = req.params.nameTo
+  const amount   = parseFloat(req.params.amount)
+  node.tradeTest(nameFrom,nameTo,amount,script,assets)
+    .then(data=>{
+        //res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
+        res.send("已经建立一条交易")
+      })
+    .catch(error=>{
+       console.log(error.stack)
+       res.end(error.stack)
+      })
 })
 
 app.get('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
@@ -454,9 +510,22 @@ app.get('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
   const amount   = parseFloat(req.params.amount)
   node.tradeTest(nameFrom,nameTo,amount)
     .then(data=>{
-        res.json(data)
+        res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
       })
-    .catch(error=>res.end(error.stack))
+    .catch(error=>{
+      console.log(error.stack)
+      res.end(error.stack)
+      })
+})
+
+////////// transaction interface/////////////////
+app.get('/transaction/:hash',function(req,res){
+  const hash = req.params.hash
+  const transaction = node.blockchain.findTransaction(hash)
+  if (config.debug) 
+    res.send(`<pre>${JSON.stringify(transaction,null,4)}</pre>`)
+  else 
+    res.send(transaction)
 })
 
 //////////others interface ////////////////
@@ -471,7 +540,10 @@ app.get('/mine',function(req,res){
   const coinbase=JSON.parse(JSON.stringify(t1))
   //mine
   node.mine(coinbase,(err,newBlock)=>{
-    res.send(`<pre>${JSON.stringify(newBlock,null,4)}</pre>`)
+    if (config.debug)
+      res.send(`<pre>${JSON.stringify(newBlock,null,4)}</pre>`)
+    else 
+      res.send(newBlock)      
   })
 })
 

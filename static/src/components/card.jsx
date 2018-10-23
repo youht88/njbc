@@ -87,7 +87,7 @@ export default class CardSample extends React.Component{
   componentWillReceiveProps(props){
   }
   getData(from=0,to=0){
-    const port = location.port=='7777' ? 5000 : location.port
+    const port = location.port=='7777' ? 4000 : location.port
     const url = document.domain + ':' + port
     message.warn(`http://${url}/blockchain/${from}/${to}`)
     $.ajax({

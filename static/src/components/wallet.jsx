@@ -183,7 +183,7 @@ export default class Wallet extends React.Component{
       this.setState({walletAddress:value})
     }
     render(){
-      const port = location.port == '7777' ? 5000 : location.port 
+      const port = location.port == '7777' ? 4000 : location.port 
       const url = document.domain +":" + port
       return(
         <div>

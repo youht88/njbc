@@ -1,6 +1,6 @@
 import React from 'react';
 import moment from 'moment';
-import { Row, Col ,message} from 'antd';
+import { Row, Col ,message,notification} from 'antd';
 import { Card ,Avatar,Icon,Tag} from 'antd';
 const { Meta } = Card;
 
@@ -77,7 +77,7 @@ export default class Blockchain extends React.Component{
   constructor(props) {
     super(props);
     this.state={
-      blockchain:[{hash:"abcde",prev_hash:"xyz",nonce:101,index:1,timestamp:"1529964580",diffcult:2,merkleRoot:"merkle",data:[{outs:[{outAddr:"ppp"}]}]}]
+      blockchain:[{hash:"abcde",prevHash:"xyz",nonce:101,index:1,timestamp:"1529964580",diffcult:2,merkleRoot:"merkle",data:[{outs:[{outAddr:"ppp"}]}]}]
       }
     this.handleCard = this.handleCard.bind(this)
     this.onSubmit = this.onSubmit.bind(this)
@@ -99,7 +99,7 @@ export default class Blockchain extends React.Component{
   componentWillReceiveProps(props){
   }
   handleAjax(path,cb){
-    const port = location.port=='7777' ? 5000 : location.port
+    const port = location.port=='7777' ? 4000 : location.port
     const url = document.domain + ':' + port
     $.ajax({
       type: 'GET',    // 请求方式
@@ -135,7 +135,7 @@ export default class Blockchain extends React.Component{
           hoverable
           >
           <p><strong>prevHash:</strong>
-          <Link to={`/block/${block.prev_hash}`}>{block.prev_hash.substr(0,6)}...</Link></p>
+          <Link to={`/block/${block.prevHash}`}>{block.prevHash.substr(0,6)}...</Link></p>
           <p><strong>diffcult:</strong>{block.diffcult}</p>
           <p><strong>timestamp:</strong>{moment(block.timestamp,'X').fromNow()}</p>
           <p><strong>txCount:</strong>{block.data.length}</p>

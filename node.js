@@ -41,11 +41,15 @@ class Node{
     //kadhost,kadport = self.entryKad.split(':')
     //self.dht = DHT("0.0.0.0",int(kadport),boot_host=kadhost,boot_port=int(kadport))
     //this.dbConnect = this.dbConnect.bind(this)
-    let peers = fs.readFileSync('peers','utf8')
-    if (peers){
-      this.peers = peers.replace(/[\r\n]/g,"")
-    }else{
-      this.peers = this.me
+    try{
+      let peers = fs.readFileSync('peers','utf8')
+      if (peers){
+        this.peers = peers.replace(/[\r\n]/g,"")
+      }else{
+        this.peers = this.me
+      }
+    }catch(error){
+      this.peers=this.me
     }
     this.nodes=this.peers.split(',')
     
@@ -95,7 +99,7 @@ class Node{
             throw Error("error on import genesisBlock")
           }
         }else{
-          console.log("创建coinbase")
+          console.log("创建genesisBlock")
           const coinbase=Transaction.newCoinbase(this.wallet.address)
           genesisBlock = await this.genesisBlock(coinbase)
         }
@@ -668,13 +672,13 @@ class Node{
     }
   }
 
-  async tradeTest(nameFrom,nameTo,amount,script=""){
+  async tradeTest(nameFrom,nameTo,amount,script="",assets={}){
     let wFrom,wTo
     wFrom = await new Wallet(nameFrom=='me'?this.me:nameFrom)
     wTo   = await new Wallet(nameTo  =='me'?this.me:nameTo)
     if (wFrom.key.prvkey){
       let txDict = await this.trade(
-        wFrom.key.prvkey,wFrom.key.pubkey,wTo.key.pubkey,amount,script).catch(error=>{
+        wFrom.key.prvkey,wFrom.key.pubkey,wTo.key.pubkey,amount,script,assets).catch(error=>{
           throw error
         })
       return txDict
@@ -682,13 +686,12 @@ class Node{
       throw new Error(`${nameFrom} have not private key on this node`)
     }
   }
-  async trade(inPrvkey,inPubkey,outPubkey,amount,script=""){
+  async trade(inPrvkey,inPubkey,outPubkey,amount,script="",assets={}){
     const newTX= await Transaction.newTransaction(
-      inPrvkey,inPubkey,outPubkey,amount,this.tradeUTXO,script).catch(error=>{
+      inPrvkey,inPubkey,outPubkey,amount,this.tradeUTXO,script,assets).catch(error=>{
          throw error
       })
     if (!newTX) return
-    console.log("if not enough then can't be here!!!!",newTX)
     let newTXdict=utils.obj2json(newTX)
     this.emitter.emit("transacted",newTXdict)
     // use socket to broadcast instead of http
@@ -714,8 +717,13 @@ class Node{
   }
   async mine(coinbase,cb){
     //sync transaction from txPool
-    let txPool = await this.txPoolSync()  
+    let txPool = [] 
     txPool.push(coinbase)
+    await this.txPoolSync().then((txs)=>{
+      for(let tx of txs){
+        txPool.push(tx)
+      }
+    })  
     let prevBlock = this.blockchain.lastblock()
     
     //mine a block with a valid nonce
@@ -756,8 +764,9 @@ class Node{
   findNonce(newBlock){
     this.otherMined=false
     //calculate_hash(index, prevHash, data, timestamp, nonce)
-    newBlock.updateHash()
     newBlock.diffcult = global.NUM_ZEROS
+    const preHeaderStr = newBlock.preHeaderString()
+    newBlock.updateHash(preHeaderStr)
     console.time("mine")
     while (newBlock.hash.slice(0,global.NUM_ZEROS)!= Array(newBlock.diffcult+1).join('0')){
       //if not genesis and blockchain had updated by other node's block then stop
@@ -766,7 +775,7 @@ class Node{
         return null
       }
       newBlock.nonce += 1
-      newBlock.updateHash()
+      newBlock.updateHash(preHeaderStr)
     }
     console.timeEnd("mine")
     logger.info(`block ${newBlock.index} mined. Nonce: ${newBlock.nonce} , hash: ${newBlock.hash}`)

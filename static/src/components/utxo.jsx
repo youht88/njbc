@@ -146,11 +146,11 @@ export default class UTXO extends React.Component{
       super(props)
     }
     render(){
-      const port = location.port == '7777' ? 5000 : location.port 
+      const port = location.port == '7777' ? 4000 : location.port 
       const url = document.domain +":" + port
       return(
         <div>
-          <UtxoTable url={url} type={"utxo/get"}/>     
+          <UtxoTable url={url} type={"utxo/get/main"}/>     
           <UtxoTable url={url} type={"utxo/get/trade"}/>
           <UtxoTable url={url} type={"utxo/get/isolate"}/> 
         </div>

@@ -48,6 +48,7 @@ class TXout{
     this.amount=args.amount   || 0
     this.outAddr=args.outAddr || ""
     this.script=args.script   || ""
+    this.assets=args.assets   || {}
   }
   canbeUnlockWith(address){
     if (this.outAddr == address){
@@ -127,7 +128,7 @@ class Transaction{
   }
   static newCoinbase(outAddr){
     let ins=[new TXin({"prevHash":"","index":-1,"inAddr":"","pubkey":null,"sign":null})]
-    let outs=[new TXout({"amount":Math.round(global.REWARD*10000)/10000,"outAddr":outAddr,"script":""})]
+    let outs=[new TXout({"amount":Math.round(global.REWARD*10000)/10000,"outAddr":outAddr,"script":"","assets":{}})]
     return new Transaction({ins,outs})
   }
   static parseTransaction(data){
@@ -143,7 +144,7 @@ class Transaction{
     let timestamp=data["timestamp"]
     return new Transaction({hash,timestamp,ins,outs})
   }
-  static async newTransaction(inPrvkey,inPubkey,outPubkey,amount,utxo,script=""){
+  static async newTransaction(inPrvkey,inPubkey,outPubkey,amount,utxo,script="",assets={}){
     return new Promise((resolve,reject)=>{
       if (script){
         const result = (new Contract(script)).check()
@@ -160,13 +161,10 @@ class Transaction{
       //                         "2543543543":{"index":0,"amount":"2"}
       //                        }
       //     }
-      console.log("new Transaction",JSON.stringify(utxo))
-      console.log("new Transaction",todo)
       if (todo["acc"] < amountFloat){
         logger.warn(`${inAddr} not have enough money.`)
         return reject(new Error("not enough money."))
       }
-      console.log("if not enough then can't be here")
       for (let hash in todo["unspend"]){
         let output = todo["unspend"][hash]
         let prevHash = hash
@@ -179,9 +177,9 @@ class Transaction{
                          "pubkey":inPubkey,
                          "sign":sign}))
       }
-      outs.push(new TXout({"amount":amountFloat,"outAddr":outAddr,"script":script}))
+      outs.push(new TXout({"amount":amountFloat,"outAddr":outAddr,"script":script,"assets":assets}))
       if (todo["acc"] > amountFloat){
-        outs.push(new TXout({"amount":todo["acc"]-amountFloat,"outAddr":inAddr,"script":""}))
+        outs.push(new TXout({"amount":todo["acc"]-amountFloat,"outAddr":inAddr,"script":"","assets":{}}))
       }
       let TX = new Transaction({ins,outs})
       let {...utxoSet} = utxo.utxoSet

@@ -63,7 +63,7 @@ export default class Block extends React.Component{
     if (blockHash==undefined)
       this.state={
         blockHash:"00934f87ed5b4e6e1e05be12cb55a4cd54798a8a71610dc1ef93b21adadcfbb2",
-        block:{hash:"00934f87ed5b4e6e1e05be12cb55a4cd54798a8a71610dc1ef93b21adadcfbb2",prev_hash:"0063b4cf5a31c98e17777c12db3ca6520fd7361895a271c1593f50961ea8c414",nonce:163,index:9,timestamp:"1529964580",diffcult:2,merkleRoot:"796e30249500449017abaeaf3b4cf207c464728c7d06250192198e510b542d40",data:[{outs:[{outAddr:"cadc9fa1926ef0b4d7d632b8cef183a5f65a8c511da565468aba3b83756ba8b3"}]}]}
+        block:{hash:"00934f87ed5b4e6e1e05be12cb55a4cd54798a8a71610dc1ef93b21adadcfbb2",prevHash:"0063b4cf5a31c98e17777c12db3ca6520fd7361895a271c1593f50961ea8c414",nonce:163,index:9,timestamp:"1529964580",diffcult:2,merkleRoot:"796e30249500449017abaeaf3b4cf207c464728c7d06250192198e510b542d40",data:[{outs:[{outAddr:"cadc9fa1926ef0b4d7d632b8cef183a5f65a8c511da565468aba3b83756ba8b3"}]}]}
         }
     else 
       this.state={blockHash:blockHash}
@@ -77,7 +77,7 @@ export default class Block extends React.Component{
   componentWillReceiveProps(props){
   }
   getData(blockHash){
-    const port = location.port==7777 ? 5000:location.port
+    const port = location.port==7777 ? 4000:location.port
     const url = document.domain + ':' + port
     //message.warn(`http://${url}/blockchain/hash/${blockHash}`)
     $.ajax({
@@ -111,7 +111,7 @@ export default class Block extends React.Component{
           style={{backgroundColor:'#eee'}}
           >
           <p><strong>prevHash:</strong>
-           <div><a onClick={this.getBlock.bind(this)}>{block.prev_hash}</a></div></p>
+           <div><a onClick={this.getBlock.bind(this)}>{block.prevHash}</a></div></p>
           <p><strong>diffcult:</strong>{block.diffcult}</p>
           <p><strong>timestamp:</strong>{moment(block.timestamp,'X').fromNow()}</p>
           <p><strong>txCount:</strong>{block.data.length}</p>

@@ -9,7 +9,7 @@ class Block{
   constructor(args){
     this.index     = parseInt(args.index) || 0
     this.nonce     = parseInt(args.nonce) || 0
-    this.prevHash  = args.prevHash
+    this.prevHash  = args.prevHash ||""
     this.timestamp = parseInt(args.timestamp)
     this.diffcult  = args.diffcult || 0
     this.merkleRoot= args.merkleRoot || ""
@@ -27,9 +27,16 @@ class Block{
         this.diffcult.toString(),
         this.nonce.toString()].join("")
   }
+  preHeaderString(){
+    return [this.index.toString(),
+        this.prevHash,
+        this.getMerkleRoot(),
+        this.timestamp.toString(),
+        this.diffcult.toString()].join("")
+  }
   getMerkleRoot(){
     let txHash=[]
-    for (let item in this.data){
+    for (let item of this.data){
       txHash.push(item.hash)
     }
     this.merkleRoot=utils.hashlib.sha256(txHash.join(""))
@@ -39,8 +46,11 @@ class Block{
     return this.merkleRoot
 
   }
-  updateHash(){
-    this.hash = utils.hashlib.sha256(this.headerString())
+  updateHash(preHeaderStr=null){
+    if (preHeaderStr)
+      this.hash = utils.hashlib.sha256(preHeaderStr+this.nonce.toString())
+    else
+      this.hash = utils.hashlib.sha256(this.headerString())
     return this.hash
   }
   dumps(){
