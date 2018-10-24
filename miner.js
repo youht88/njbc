@@ -12,9 +12,10 @@ const async = require('async')
 const utils = require('./utils.js')
 
 const Node = require('./node.js').Node
-const Block = require('./block.js').Block
 const Transaction = require('./transaction.js').Transaction
 const Wallet = require('./wallet.js').Wallet
+const Contract = require('./contract.js').Contract
+
 //define logger
 const logger = utils.logger.getLogger()
 logger.trace(__footprint,"trace color is blue")
@@ -126,7 +127,7 @@ global.REWARD = 2.0
 global.NUM_ZEROS = 3
 global.NUM_FORK = 6
 global.TRANSACTION_TO_BLOCK = 3
-
+global.contractTimeout = 5000
 let node
 
 const start= async ()=>{
@@ -368,7 +369,7 @@ app.get('/blockchain/hash/:blockHash/',function(req,res,next){
 
 app.get('/blockchain/:fromIndex/:toIndex',function(req,res,next){
   const fromIndex = parseInt(req.params.fromIndex)
-  const toIndex   = parseInt(req,params.toIndex)
+  const toIndex   = parseInt(req.params.toIndex)
   const blocks = node.blockchain.getRangeBlocks(fromIndex,toIndex)
   if (config.debug)
     res.send(`<pre>${JSON.stringify(blocks,null,4)}</pre>`)
@@ -486,9 +487,13 @@ app.get('/wallet/create/:name',async (req,res,next)=>{
 app.post('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
   const script = req.body.script
   let assets = req.body.assets
-  try{
-    assets = JSON.parse(assets)
-  }catch(e){
+  if (assets){
+    try{
+      assets = JSON.parse(assets)
+    }catch(e){
+      res.json({"errCode":3,"errText":"数据格式必须是数字或合法的JSON对象","result":null})  
+      return 
+    }
   }
   const nameFrom = req.params.nameFrom
   const nameTo   = req.params.nameTo
@@ -496,11 +501,10 @@ app.post('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
   node.tradeTest(nameFrom,nameTo,amount,script,assets)
     .then(data=>{
         //res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
-        res.send("已经建立一条交易")
+        res.json({errCode:0,errText:'',result:data})
       })
     .catch(error=>{
-       console.log(error.stack)
-       res.end(error.stack)
+       res.json({errCode:4,errText:error.message,result:null})
       })
 })
 
@@ -514,7 +518,7 @@ app.get('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
       })
     .catch(error=>{
       console.log(error.stack)
-      res.end(error.stack)
+      res.end(error.message)
       })
 })
 
@@ -568,6 +572,26 @@ app.get('/syncOverallChain',function(req,res){
       logger.fatal("syncOverallChain:",error)
       res.end("error")
     })
+})
+
+//script
+app.post('/check/script',function(req,res){
+  const script = req.body.script || ""
+  let contract
+  try{
+    contract = new Contract(script)
+  }catch(error){
+    res.json({"errCode":1,"errText":error.message,"result":false})
+    return
+  }
+  try{
+    result = contract.check()
+    res.json({"errCode":0,"errText":'',"result":result})
+    return
+  }catch(error){
+    res.json({"errCode":2,"errText":error.message,"result":false})
+    return
+  }
 })
 
 app.set('port', process.env.PORT || 4000);

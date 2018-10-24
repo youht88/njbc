@@ -150,7 +150,7 @@ export default class TxForm extends React.Component{
       }
       this.setState({insData:insData})
       this.setState({outsData:outsData})
-      this.setState({hash:data.hash,timestamp:data.timestamp,script:data.outs[0].script,assets:data.outs[0].assets})
+      this.setState({hash:data.hash,timestamp:data.timestamp,script:data.outs[0].script,assets:data.outs[0].assets,contractHash:data.outs[0].contractHash})
     }
     else {
       message.info("no data")
@@ -165,7 +165,7 @@ export default class TxForm extends React.Component{
     return <WrappedForm url={url} afterSubmit={this.setData.bind(this)}/>
   }
   render(){
-    const {hash,timestamp,insData,outsData,insColumns,outsColumns,script,assets} = this.state
+    const {hash,timestamp,insData,outsData,insColumns,outsColumns,script,assets,contractHash} = this.state
     if (insData){
       return(
       <div>
@@ -190,7 +190,7 @@ export default class TxForm extends React.Component{
               <Table dataSource={outsData} columns={outsColumns} pagination={false}/>
             </Col>
           </Row>
-          <Alert type="info" message="合约:" description={<pre>{script?script:"没有脚本"}</pre>}></Alert>
+          <Alert type="info" message={"合约:"+contractHash} description={<pre>{script?script:"没有脚本"}</pre>}></Alert>
           <Alert type="info" message="数据:" description={<pre>{assets?JSON.stringify(assets,null,4):"没有数据"}</pre>}></Alert>
         </Panel>
       </Collapse>

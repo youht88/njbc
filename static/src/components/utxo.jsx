@@ -15,7 +15,7 @@
   class UtxoTable extends React.Component{
     constructor(props){
       super(props)
-      this.state={visible:false,script:"",utxoData:[],total:0}
+      this.state={visible:false,script:"",utxoData:[],total:0,result:"no result"}
       this.setData = this.setData.bind(this)
     }
     componentDidMount(){
@@ -79,11 +79,14 @@
     }
     handleCheck(){
       this.ajaxPost('check/script',{script:this.state.script},(value)=>{
-            alert(value)
+        if (value.errCode==0)
+          this.setState({result:JSON.stringify(value.result)})
+        else
+          this.setState({result:value.errText})
       })
     }
     handleOk(){
-      this.setState({visible:false})
+      this.setState({visible:false,result:"no result"})
     }
     render(){
       const columns = [{
@@ -130,7 +133,9 @@
               onOk={this.handleOk.bind(this)}
               onCancel={this.handleCheck.bind(this)}
             >
-              <pre>{this.state.script}</pre>
+              <div style={{maxHeight:200,overflow:"auto"}}><pre>{this.state.script}</pre></div>
+              <hr/>
+              <div style={{maxHeight:100,overflow:"auto"}}>{this.state.result}</div>
             </Modal>
           </div>
           )

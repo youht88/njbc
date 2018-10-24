@@ -44,10 +44,11 @@ class BlockList extends React.Component{
     this.state={columns}
   }
   componentWillReceiveProps(nextProps) {
-    if (nextProps.maxindex>0){
+    if (nextProps.maxindex>=0){
       let from,to
       to=nextProps.maxindex
       from = (to - 9)>=0 ? (to-9) : 0 
+      console.log(from.toString()+","+to.toString())
       this.handleAjax(`blockchain/${from}/${to}`,
         (value)=>{
           this.setState({blocks:value})
@@ -136,18 +137,30 @@ class TradeForm extends React.Component{
     this.props.form.validateFields((err,values)=>{
       if(err){
         message.error("新交易表单输入错误！")
-        return
+        return false
       }
-      if (values.script)
+      if (values.assets){
+        try{
+          JSON.parse(values.assets)
+        }catch(error){
+          this.setState({errText:"数据必须是数字或合法的json对象"})
+          return false
+        }
+      }
+      if (values.script){
         this.handleAjax('check/script',{script:values.script},
            (data)=>{
-              this.setState({errText:data})
-              if (data=="True" || data=="False")
-                message.success("check right.")
+              if (data.errCode==0){
+                this.setState({errText:""})
+                message.success(`Check right.The result is ${JSON.stringify(data.result)}`)
+              }else
+                this.setState({errText:data.errText})                
            }
         )
-      else
+      }else{
+        this.setState({errText:""})
         message.success("check right.")
+      }
     })
   }
   handleSubmit(e){
@@ -158,19 +171,19 @@ class TradeForm extends React.Component{
         return
       }
       //message.warn(`trade/${values.inAddr}/${values.outAddr}/${values.amount}`)
-      this.setState({data:undefined})
+      this.setState({data:null})
       let path=`${values.inAddr}/${values.outAddr}/${values.amount}`
       this.handleAjax(encodeURI(`trade/${path}`),{script:values.script,assets:values.assets},
         (value)=>{
            if (typeof(value)=="object"){
-             if (value.errCode)
-               alert(value.errText)
+             if (value.errCode==0)
+               this.setState({errText:'',data:value.result})
              else
-               this.setState({data:value})
+               this.setState({errText:value.errText,data:null})
            }  
            else {
              //not have enough money
-             this.setState({data:undefined})
+             this.setState({data:null})
              message.error(value)
            }
         }
@@ -339,7 +352,6 @@ export default class Home extends React.Component{
       },
       error: (res,status,error)=>{
         // 控制台查看响应文本，排查错误
-        alert(JSON.stringify(error))
         message.error(`http://${this.state.url}/${path}错误,请输入正确的地址`);
       }
     })

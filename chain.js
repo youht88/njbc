@@ -258,6 +258,7 @@ class Chain{
   constructor(blocks){
     this.blocks = blocks
     this.utxo = new UTXO('main')
+    global.blockchain = this
   }
   isValid(){
     const blocks = this.block.slice(1)
@@ -342,18 +343,39 @@ class Chain{
     }
     return false
   }
-
+  findContract(uhash){
+    let block = this.lastblock()
+    let find,transaction
+    while (true){
+      let data=block.data
+      for (let TX of data){
+        if (TX.outs[0].contractHash == uhash){ 
+          transaction = TX
+          find=true
+          break
+        }
+      }
+      if (find)
+        break
+      block = this.findBlockByHash(block.prevHash)
+      if (!block) break
+    }
+    return transaction
+  }
   findTransaction(uhash){
     let block = this.lastblock()
-    let transaction
+    let find,transaction
     while (true){
       let data=block.data
       for (let TX of data){
         if (TX.hash == uhash){ 
           transaction = TX
+          find=true
           break
         }
       }
+      if (find)
+        break
       block = this.findBlockByHash(block.prevHash)
       if (!block) break
     }

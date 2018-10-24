@@ -47,19 +47,22 @@ class TXout{
   constructor(args){
     this.amount=args.amount   || 0
     this.outAddr=args.outAddr || ""
+    this.contractHash = args.contractHash || ""
     this.script=args.script   || ""
     this.assets=args.assets   || {}
+    if (this.script && !this.contractHash)
+      this.contractHash = utils.hashlib.sha256(this.script)
   }
   canbeUnlockWith(address){
     if (this.outAddr == address){
       if (this.script==""){
         return true
       }else{
-        const contract = new Contract(this.script)
-        const result = contract.check()
-        if (result["errCode"]==0){
-          return result["result"]
-        }else{
+        try{
+          const contract = new Contract(this.script)
+          const result = contract.check()
+          return result
+        }catch(error){
           return false
         }
       }
@@ -147,9 +150,11 @@ class Transaction{
   static async newTransaction(inPrvkey,inPubkey,outPubkey,amount,utxo,script="",assets={}){
     return new Promise((resolve,reject)=>{
       if (script){
-        const result = (new Contract(script)).check()
-        if (!result) 
-          return reject(new Error("script error"))
+        try{
+          const result = (new Contract(script)).check()
+        }catch(error){
+          return reject(error)
+        }
       }
       let ins=[]
       let outs=[]
