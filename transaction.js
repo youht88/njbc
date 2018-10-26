@@ -96,9 +96,6 @@ class Transaction{
   isCoinbase(){
     return this.ins[0].index==-1
   } 
-  sign(self,prvkey,prevTXs){
-    if (this.isCoinbase()) return
-  }    
   isValid(){
     if (this.isCoinbase())
       return (this.insLen==1 && this.outsLen==1 && this.outs[0].amount<=global.REWARD)       
@@ -147,44 +144,78 @@ class Transaction{
     let timestamp=data["timestamp"]
     return new Transaction({hash,timestamp,ins,outs})
   }
-  static async newTransaction(inPrvkey,inPubkey,outPubkey,amount,utxo,script="",assets={}){
+  static async newTransaction(inPrvkey,inPubkey,outAddress,amount,utxo,script="",assets={}){
     return new Promise((resolve,reject)=>{
-      if (script){
-        try{
-          const result = (new Contract(script)).check()
-        }catch(error){
-          return reject(error)
-        }
+      let preNewTx = Transaction.preNewTransaction(inPubkey,outAddress,amount,utxo,script,assets)
+      Transaction.sign(inPrvkey,preNewTx)
+      Transaction.newRawTransaction(preNewTx,utxo)
+        .then(result=>resolve(result))
+        .catch(error=>reject(error))
+    })
+  }
+  static preNewTransaction(inPubkey,outAddr,amount,utxo,script="",assets={}){
+    if (script){
+      try{
+        const result = (new Contract(script)).check()
+      }catch(error){
+        throw error
       }
+    }
+    if (amount<0) throw new Error("金额不能小于零")
+    let ins=[]
+    let outs=[]
+    let inAddr = Wallet.address(inPubkey)
+    let amountFloat = Math.round(amount*10000)/10000
+    let todo = utxo.findSpendableOutputs(inAddr,amountFloat)
+    //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3"},        
+    //                         "2543543543":{"index":0,"amount":"2"}
+    //                        }
+    //     }
+    if (todo["acc"] < amountFloat){
+      logger.warn(`${inAddr} not have enough money.`)
+      throw new Error("not enough money.")
+    }
+    for (let hash in todo["unspend"]){
+      let output = todo["unspend"][hash]
+      let prevHash = hash
+      let index = output["index"]
+      ins.push({"prevHash":prevHash,
+                "index":index,
+                "inAddr":inAddr,
+                "pubkey":inPubkey,
+                "sign":""})    
+    }
+    outs.push({"amount":amountFloat,"outAddr":outAddr,"script":script,"assets":assets})
+    if (todo["acc"] > amountFloat){
+      outs.push({"amount":todo["acc"]-amountFloat,"outAddr":inAddr,"script":"","assets":{}})
+    }
+    return {rawIns:ins,rawOuts:outs}
+  }
+  
+  static sign(inPrvkey,preNewTx){
+    try{
+      if (preNewTx.rawIns[0].index==-1) return
+      const rawIns=preNewTx.rawIns
+      for (let rawIn of rawIns){
+        let toSign=rawIn.prevHash+rawIn.index.toString()+rawIn.inAddr
+        let sign=utils.crypto.sign(toSign,inPrvkey)
+        rawIn.sign = sign
+      }
+    }catch(error){
+      throw error
+    }
+    return
+  }    
+
+  static async newRawTransaction(raw,utxo){
+    return new Promise((resolve,reject)=>{
       let ins=[]
       let outs=[]
-      let inAddr = Wallet.address(inPubkey)
-      let outAddr= Wallet.address(outPubkey)
-      let amountFloat = Math.round(amount*10000)/10000
-      let todo = utxo.findSpendableOutputs(inAddr,amountFloat)
-      //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3"},        
-      //                         "2543543543":{"index":0,"amount":"2"}
-      //                        }
-      //     }
-      if (todo["acc"] < amountFloat){
-        logger.warn(`${inAddr} not have enough money.`)
-        return reject(new Error("not enough money."))
+      for (let rawIn of raw.rawIns){
+        ins.push(new TXin(rawIn))
       }
-      for (let hash in todo["unspend"]){
-        let output = todo["unspend"][hash]
-        let prevHash = hash
-        let index = output["index"]
-        let toSign=prevHash+index.toString()+inAddr
-        let sign=utils.crypto.sign(toSign,inPrvkey)
-        ins.push(new TXin({"prevHash":prevHash,
-                         "index":index,
-                         "inAddr":inAddr,
-                         "pubkey":inPubkey,
-                         "sign":sign}))
-      }
-      outs.push(new TXout({"amount":amountFloat,"outAddr":outAddr,"script":script,"assets":assets}))
-      if (todo["acc"] > amountFloat){
-        outs.push(new TXout({"amount":todo["acc"]-amountFloat,"outAddr":inAddr,"script":"","assets":{}}))
+      for (let rawOut of raw.rawOuts){
+        outs.push(new TXout(rawOut))
       }
       let TX = new Transaction({ins,outs})
       let {...utxoSet} = utxo.utxoSet
@@ -194,6 +225,10 @@ class Transaction{
       utxo.utxoSet = utxoSet
       return resolve(TX)
     })
+  }
+  
+  static async getTxPool(){
+    return global.db.findMany("transaction",{})
   }
 }
 

@@ -10,11 +10,15 @@ class Contract{
     this.compileError=null
     this.executeError=null
     try{
+      if (!this.isSafe()) throw new Error("脚本没有满足安全性限制")    
       this.script=new vm.Script(script)
       this.setSandbox(sandbox)
     }catch(error){
       throw error
     }
+  }
+  isSafe(script){
+    return true
   }
   check(){
     let result
@@ -31,8 +35,9 @@ class Contract{
     sandbox["crypto"]  = require('./utils.js').crypto
     sandbox["hashlib"] = require('./utils.js').hashlib
     sandbox["base64"]  = require('./utils.js').base64
-
-    sandbox["fs"]=require("fs")
+    sandbox["callback"] = function(data){
+      console.log(data)
+    }
     sandbox["getBalance"] = (address)=>{
        if (global.blockchain)
          return global.blockchain.utxo.getBalance(address)
@@ -60,10 +65,6 @@ class Contract{
     sandbox["getContract"] = (hash)=>{
        if (global.blockchain)
          return global.blockchain.findContract(hash)
-    }
-    sandbox["loop"] = ()=>{
-      while (true){
-      }
     }
     sandbox["nowE8"]= ()=>new Date(new Date().getTime()+28800000)
     this.sandbox=vm.createContext(sandbox)

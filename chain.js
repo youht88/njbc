@@ -3,6 +3,7 @@ const async = require("async")
 const utils = require("./utils.js")
 const logger = utils.logger.getLogger()
 const TXout = require("./transaction.js").TXout
+const Block = require("./block.js").Block
 
 class UTXO{
   constructor(name){
@@ -296,6 +297,7 @@ class Chain{
     return this.blocks[this.blocks.length - 1].index
   }
   addBlock(newBlock){
+    let doutxo
     if (newBlock.index >= 1){
       if (newBlock.index > this.blocks.length){
         logger.warn(`add block but the new block ${newBlock.index}-${newBlock.nonce} has error index.`)
@@ -309,6 +311,14 @@ class Chain{
     }else if (newBlock.index==0){
       this.blocks.push(newBlock)
     }
+    if (newBlock.index==0) 
+      doutxo = this.utxo.reset(this)
+    else 
+      doutxo = this.utxo.update(newBlock)
+    if (!doutxo){
+      this.blocks.pop()
+      return false
+    }   
     return true
   }
   //removeBlock
@@ -316,7 +326,6 @@ class Chain{
     const block = this.blocks.pop()
     await global.db.deleteOne("blockchain",{"index":block.index})
     logger.warn(`remove block ${block.index}-${block.nonce} from chain`)
-
     const prevTXs=this.findPrevTransactions(block)
     this.utxo.updateAfterRemove(prevTXs,block)
   }
@@ -421,10 +430,8 @@ class Chain{
       throw new Error(`can't move BlockToPool,index=${index}`)
     const blockDict = await global.db.findOne("blockchain",{"index":index},{"project":{"_id":0}})
     const block = new Block(blockDict)
-    await global.db.removeOne("blockchain",{"index":index})
-    logger.warn(`remove block ${block.index}-${block.nonce} from chain`)
-    this.popBlock(block)
-    block.saveToPool()
+    await this.popBlock(block)
+    await block.saveToPool()
   }
 
   getSPV(){
@@ -445,5 +452,5 @@ class Chain{
 
 }
 
-exports.Chain = Chain
-exports.UTXO  = UTXO
+module.exports.Chain = Chain
+module.exports.UTXO  = UTXO

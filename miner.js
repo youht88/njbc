@@ -12,9 +12,10 @@ const async = require('async')
 const utils = require('./utils.js')
 
 const Node = require('./node.js').Node
-const Transaction = require('./transaction.js').Transaction
 const Wallet = require('./wallet.js').Wallet
 const Contract = require('./contract.js').Contract
+const Transaction = require('./transaction.js').Transaction
+console.log("miner.js3",typeof Wallet,typeof Transaction)
 
 //define logger
 const logger = utils.logger.getLogger()
@@ -125,7 +126,7 @@ const config = syncConfigFile(args)
 //set global 
 global.REWARD = 2.0
 global.NUM_ZEROS = 3
-global.NUM_FORK = 6
+global.NUM_FORK = 0
 global.TRANSACTION_TO_BLOCK = 3
 global.contractTimeout = 5000
 let node
@@ -431,6 +432,14 @@ app.get('/utxo/get/trade',function(req,res){
 })
 
 //////////wallet interface ////////////////
+app.get('/wallet/all',async function(req,res){
+  const accounts = await Wallet.getAll()
+  if (config.debug)
+    res.send(`</pre>${JSON.stringify(accounts,null,4)}</pre>`)
+  else
+    res.send(accounts)
+})
+
 app.get('/wallet/me',function(req,res){
   const balance = node.blockchain.utxo.getBalance(node.wallet.address)
   const json = {"address":node.wallet.address,
@@ -523,6 +532,16 @@ app.get('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
 })
 
 ////////// transaction interface/////////////////
+app.get('/transaction/txpool',async function(req,res){
+  const txs = await Transaction.getTxPool()
+  global.db.findMany("transaction",{}).then((txs)=>{
+    if (config.debug)
+      res.send(`<pre>${JSON.stringify(txs,null,4)}</pre>`)
+    else 
+      res.json(txs)
+  })
+})
+
 app.get('/transaction/:hash',function(req,res){
   const hash = req.params.hash
   const transaction = node.blockchain.findTransaction(hash)
@@ -531,7 +550,6 @@ app.get('/transaction/:hash',function(req,res){
   else 
     res.send(transaction)
 })
-
 //////////others interface ////////////////
 app.get('/getEntryNode/entryNodes',function(req,res){
   node.getEntryNodes().then(data=>{

@@ -37,7 +37,9 @@ class Node{
     this.isolatePool=[]
     this.tradeUTXO = {}
     this.isolateBlockPool = []
-
+    this.tradeUTXO = new UTXO("trade")
+    this.isolateUTXO = new UTXO("isolate")
+        
     //kadhost,kadport = self.entryKad.split(':')
     //self.dht = DHT("0.0.0.0",int(kadport),boot_host=kadhost,boot_port=int(kadport))
     //this.dbConnect = this.dbConnect.bind(this)
@@ -117,6 +119,12 @@ class Node{
       
       //sync utxo
       this.resetUTXO()
+
+      setInterval(()=>{
+        this.syncOverallChain(false)
+          .then(bestIndex=>{
+        logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())})
+      },60000*5)
       
       this.blockProcess()
     })
@@ -129,6 +137,7 @@ class Node{
       if (blocksDict.length!=0){
         this.blockPoolSync(blocksDict)
           .then(()=>this.minerProcess())
+          .catch((error)=>{logger.error(error.stack)})
       }else{
         this.minerProcess()
       }
@@ -144,6 +153,7 @@ class Node{
         //mine
         this.mine(coinbase)
           .then(()=>this.blockProcess())
+          .catch((error)=>{logger.error(error.stack)})
       }else{
         this.blockProcess()
       }
@@ -478,17 +488,17 @@ class Node{
   }
   async syncLocalChain(){
     const localChain = new Chain([])
+    this.blockchain = localChain
     await global.db.findMany("blockchain",{},{"project":{"_id":0},"sort":["index","ascending"]}).then(blocks=>{
       for (let idx=0;idx<blocks.length;idx++){
         let localBlock=new Block(blocks[idx])
         localChain.addBlock(localBlock)
       }
-      this.blockchain = localChain
     }) 
     return localChain
   }
   async syncOverallChain(full=false){
-    let bestChain = await this.syncLocalChain()
+    let bestChain = this.blockchain
     let fromIndex=0
     let toIndex=0
     if (full) 
@@ -593,7 +603,68 @@ class Node{
       }
     }
   }
+  async resolveFork(linkBlocks,forkLevels={},resolve=false){
+    try{
+      let block = linkBlocks[linkBlocks.length - 1]
+      let index = block.index - 1
+      if (index==-1) {
+        return false 
+      }
+      if (!forkLevels[index])
+        forkLevels[index] = await utils.db.findMany("blockpool",{"index":index},{"_id":0})
+      if (forkLevels[index].length==0) return false
+      for (let forkBlock of forkLevels[index]){
+        if (block.prevHash != forkBlock.hash) continue
+        linkBlocks.push(new Block(forkBlock))
+        if (forkBlock.index==0 || forkBlock.prevHash == this.blockchain.blocks[forkBlock.index-1].hash) {
+          return true
+        }
+        await this.resolveFork(linkBlocks).then(result=>{
+          resolve = result
+        })
+        if (resolve) {
+          //console.log("resolveFork",linkBlocks.length)
+          return true 
+        }
+        linkBlocks.pop()
+       }
+       return false
+     }catch(error){
+       throw error
+     }
+  }  
   async blockPoolSync(blocksDict){
+    for (let blockDict of blocksDict){
+      let block = new Block(blockDict)
+      let linkBlocks = [block]
+      if (!block.isValid()) continue
+      if (block.prevHash != this.blockchain.lastblock().hash){
+        let resolve = await this.resolveFork(linkBlocks)  
+        console.log("blockPoolSync",resolve,linkBlocks)
+        if (!resolve) continue
+      }  
+      //将linkBlocks联入blockchain
+      for (let i=1;i<linkBlocks.length;i++){
+        await this.blockchain.moveBlockToPool(linkBlocks[i].index)
+        logger.info(`已经删除主链区块:${linkBlocks[i].index}`)
+      }
+      for (let i=linkBlocks.length - 1;i>=0;i--){
+        let linkBlock = linkBlocks[i]
+        if (!this.blockchain.addBlock(linkBlock)) break
+        const {...tradeUTXO} = this.blockchain.utxo.utxoSet 
+        this.tradeUTXO.utxoSet = tradeUTXO
+        const {...isolateUTXO} = this.blockchain.utxo.utxoSet 
+        this.isolateUTXO.utxoSet = isolateUTXO
+        await this.txPoolRemove(linkBlock)
+        await linkBlock.save()
+        await linkBlock.removeFromPool()
+        logger.info(`已经增加主链区块:${linkBlock.index}-${linkBlock.nonce}`)
+        return true
+      }
+    }
+    return false
+  }
+  async blockPoolSync_old(blocksDict){
     let maxindex = this.blockchain.maxindex()
     let block,doutxo
     logger.info(`is BlockSyning ${maxindex+1} from pool`)
@@ -678,7 +749,7 @@ class Node{
     wTo   = await new Wallet(nameTo  =='me'?this.me:nameTo)
     if (wFrom.key.prvkey){
       let txDict = await this.trade(
-        wFrom.key.prvkey,wFrom.key.pubkey,wTo.key.pubkey,amount,script,assets).catch(error=>{
+        wFrom.key.prvkey,wFrom.key.pubkey,wTo.address,amount,script,assets).catch(error=>{
           throw error
         })
       return txDict
@@ -686,9 +757,9 @@ class Node{
       throw new Error(`${nameFrom} have not private key on this node`)
     }
   }
-  async trade(inPrvkey,inPubkey,outPubkey,amount,script="",assets={}){
+  async trade(inPrvkey,inPubkey,outAddress,amount,script="",assets={}){
     const newTX= await Transaction.newTransaction(
-      inPrvkey,inPubkey,outPubkey,amount,this.tradeUTXO,script,assets).catch(error=>{
+      inPrvkey,inPubkey,outAddress,amount,this.tradeUTXO,script,assets).catch(error=>{
          throw error
       })
     if (!newTX) return
@@ -793,7 +864,7 @@ class Node{
       await block.saveToPool()
       //await global.db.updateOne("blockpool",{"hash":block.hash},{"$set":utils.obj2json(block)},{"upsert":true})
       this.otherMined=true
-      resolve(true)
+      return resolve(true)
     })
   }
   async transacted(txDict){
