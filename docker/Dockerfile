@@ -44,5 +44,6 @@ RUN echo  command = /njbc/node miner.js >> /etc/supervisor.d/njbc.ini
 RUN echo  directory = /njbc/            >> /etc/supervisor.d/njbc.ini
 
 RUN npm install react-bootstrap --save
+RUN npm install node-dev -g 
 
 WORKDIR /njbc

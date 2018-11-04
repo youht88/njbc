@@ -2,7 +2,6 @@ const fs=require('fs')
 const async = require("async")
 const utils = require("./utils.js")
 const logger = utils.logger.getLogger()
-const Contract = require("./contract.js").Contract
 const Wallet = require("./wallet.js").Wallet
 
 //function test
@@ -19,7 +18,7 @@ class TXin{
         this.pubkey64D=""
       }else{
         //64 mean use base64encode 
-        this.pubkey64D=utils.base64.encode(pubkey)
+        this.pubkey64D=utils.bufferlib.b64encode(pubkey)
       }
     }
     if (args.signD){
@@ -54,21 +53,8 @@ class TXout{
       this.contractHash = utils.hashlib.sha256(this.script)
   }
   canbeUnlockWith(address){
-    if (this.outAddr == address){
-      if (this.script==""){
-        return true
-      }else{
-        try{
-          const contract = new Contract(this.script)
-          const result = contract.check()
-          return result
-        }catch(error){
-          return false
-        }
-      }
-    }else{
-      return false    
-    }
+    if (this.outAddr == address) return true
+    return false    
   }
 }
 class Transaction{
@@ -103,7 +89,7 @@ class Transaction{
     let outAddr=""
     for (let idx=0;idx<this.ins.length;idx++){
       let vin = this.ins[idx]
-      let outPubkey = utils.base64.decode(vin.pubkey64D)
+      let outPubkey = utils.bufferlib.b64decode(vin.pubkey64D)
       outAddr = vin.inAddr
       //step1:verify it is mine 
       if (!(outAddr == vin.inAddr && utils.hashlib.sha256(outPubkey)== vin.inAddr)){
@@ -111,7 +97,7 @@ class Transaction{
         logger.error("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? false")
         return false
       }
-      logger.debug("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? ok")
+      //logger.debug("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? ok")
       //step2:verify not to be changed!!!!
       let isVerify=utils.crypto.verify(
         vin.prevHash+vin.index.toString()+vin.inAddr,
@@ -122,13 +108,13 @@ class Transaction{
         logger.error("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? false")
         return false
       }
-      logger.debug("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? ok")
+      //logger.debug("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? ok")
     }
     return true
   }
   static newCoinbase(outAddr){
     let ins=[new TXin({"prevHash":"","index":-1,"inAddr":"","pubkey":null,"sign":null})]
-    let outs=[new TXout({"amount":Math.round(global.REWARD*10000)/10000,"outAddr":outAddr,"script":"","assets":{}})]
+    let outs=[new TXout({"amount":parseFloat(global.REWARD.toPrecision(12)),"outAddr":outAddr,"script":"","assets":{}})]
     return new Transaction({ins,outs})
   }
   static parseTransaction(data){
@@ -154,24 +140,17 @@ class Transaction{
     })
   }
   static preNewTransaction(inPubkey,outAddr,amount,utxo,script="",assets={}){
-    if (script){
-      try{
-        const result = (new Contract(script)).check()
-      }catch(error){
-        throw error
-      }
-    }
     if (amount<0) throw new Error("金额不能小于零")
     let ins=[]
     let outs=[]
     let inAddr = Wallet.address(inPubkey)
-    let amountFloat = Math.round(amount*10000)/10000
-    let todo = utxo.findSpendableOutputs(inAddr,amountFloat)
+    amount = parseFloat(amount)
+    let todo = utxo.findSpendableOutputs(inAddr,amount)
     //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3"},        
     //                         "2543543543":{"index":0,"amount":"2"}
     //                        }
     //     }
-    if (todo["acc"] < amountFloat){
+    if (todo["acc"] < amount){
       logger.warn(`${inAddr} not have enough money.`)
       throw new Error("not enough money.")
     }
@@ -185,9 +164,9 @@ class Transaction{
                 "pubkey":inPubkey,
                 "sign":""})    
     }
-    outs.push({"amount":amountFloat,"outAddr":outAddr,"script":script,"assets":assets})
-    if (todo["acc"] > amountFloat){
-      outs.push({"amount":todo["acc"]-amountFloat,"outAddr":inAddr,"script":"","assets":{}})
+    outs.push({"amount":amount,"outAddr":outAddr,"script":script,"assets":assets})
+    if (todo["acc"] > amount){
+      outs.push({"amount":parseFloat((todo["acc"]-amount).toPrecision(12)),"outAddr":inAddr,"script":"","assets":{}})
     }
     return {rawIns:ins,rawOuts:outs}
   }
@@ -204,7 +183,7 @@ class Transaction{
     }catch(error){
       throw error
     }
-    return
+    return preNewTx
   }    
 
   static async newRawTransaction(raw,utxo){

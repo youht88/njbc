@@ -25,10 +25,26 @@ function handleAjax(peer,path,cb){
     error: (res,status,error)=>{
       notification.error(
         {message:"出现错误",
-         description:`http://${peer}/${path}错误,请输入正确的地址`
+         description:`http://${peer}/${path}错误${error.message},请输入正确的地址`
         });
     }
   })
+}
+
+function  handleSocketio(peer,event,data,eventResponse,cb){
+  if (!peer)
+    return
+  const socketio = io.connect(`http://${peer}`,{"query":{"token":"youht"}})
+  socketio.on("connect",()=>{
+    socketio.on(eventResponse,function(dataRes){
+      cb(dataRes)
+      socketio.disconnect()
+    })
+    socketio.on("error",function(err){
+      alert(err.stack)
+    })
+  })
+  socketio.emit(event,data)
 }
 
 class FormNode extends React.Component {
@@ -96,21 +112,8 @@ class NodeInfo extends React.Component{
     }
   }
   
-  handleSocketio(peer,event,data,eventResponse,cb){
-    if (!peer)
-      return
-    const socketio = io.connect(`http://${peer}`)
-    socketio.on("connect",()=>{
-      socketio.on(eventResponse,function(dataRes){
-        cb(dataRes)
-        socketio.disconnect()
-      })
-    })
-    socketio.emit(event,data)
-  }
-
   getData(node){
-    this.handleSocketio(node,'getNodeInfo','','getNodeInfoResponse',
+    handleSocketio(node,'getNodeInfo','','getNodeInfoResponse',
       (value)=>{
         this.setState({info:value})
         this.props.handleSetInfo(value)
@@ -159,21 +162,9 @@ class NodeList extends React.Component{
       this.getData(nextProps.node)
     }
   }
-  handleSocketio(peer,event,data,eventResponse,cb){
-    if (!peer)
-      return
-    const socketio = io.connect(`http://${peer}`)
-    socketio.on("connect",()=>{
-      socketio.on(eventResponse,function(dataRes){
-        cb(dataRes)
-        socketio.disconnect()
-      })
-    })
-    socketio.emit(event,data)
-  }
 
   getData(node){
-    this.handleSocketio(node,'getNodeInfo','','getNodeInfoResponse',
+    handleSocketio(node,'getNodeInfo','','getNodeInfoResponse',
       (value)=>{
         this.setState({info:value})
         data=value.peers.map(

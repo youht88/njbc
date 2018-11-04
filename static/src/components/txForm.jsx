@@ -11,6 +11,29 @@ import { Form, Input, Button ,Tag} from 'antd';
 const FormItem = Form.Item;
 import {Alert} from 'antd';
 
+function handleAjax(method,path,data,cb){
+  const port=location.port=='7777'?4000:location.port
+  const url = document.domain + ':' + port
+  let trueData = {}
+  if (typeof data == "function"){
+    cb = data
+  }else{
+    trueData = data
+  }  
+  $.ajax({
+    type: method,    // 请求方式
+    data:trueData,
+    url: `http://${url}/${path}`,
+    success: (res, status, jqXHR)=> {
+      cb(res)
+    },
+    error: (res,status,error)=>{
+      // 控制台查看响应文本，排查错误
+      message.error(`http://${url}/${path}错误，请输入正确的地址`);
+    }
+  })
+}  
+
 class FormTXHash extends React.Component {
   constructor() {
     super();
@@ -19,19 +42,6 @@ class FormTXHash extends React.Component {
   componentDidMount() {
     // To disabled submit button at the beginning.
     //this.props.form.validateFields();
-  }
-  handleAjax(path,cb){
-    $.ajax({
-      type: 'GET',    // 请求方式
-      url: `http://${this.props.url}/${path}`,
-      success: (res, status, jqXHR)=> {
-        cb(res)
-      },
-      error: (res,status,error)=>{
-        // 控制台查看响应文本，排查错误
-        message.error(`http://${this.props.url}/${path}错误,请输入正确的地址`);
-      }
-    })
   }
 
   handleSubmit(e){
@@ -42,7 +52,8 @@ class FormTXHash extends React.Component {
         return
       }
       if (this.props.afterSubmit){
-        this.handleAjax(`transaction/${values.txHash}`,(data)=>{
+        handleAjax("get",`transaction/${values.txHash}`,(data)=>{
+          alert(data)
           this.props.afterSubmit(data)
         })
       }
@@ -99,7 +110,7 @@ export default class TxForm extends React.Component{
       key: 'amount',
     }];
     
-    this.state = {insColumns,outsColumns}
+    this.state = {insColumns,outsColumns,errText:null}
     this.setData = this.setData.bind(this)
   }
   componentDidMount(){
@@ -109,26 +120,11 @@ export default class TxForm extends React.Component{
     }else{
       const txHash = this.props.match.params.txHash
       if (txHash) {
-        this.handleAjax(`transaction/${txHash}`,(data)=>{
+        handleAjax("get",`transaction/${txHash}`,(data)=>{
           this.setData(data)
         })
       }
     }
-  }
-  handleAjax(path,cb){
-    const port=location.port=='7777'?4000:location.port
-    const url = document.domain + ':' + port
-    $.ajax({
-      type: 'GET',    // 请求方式
-      url: `http://${url}/${path}`,
-      success: (res, status, jqXHR)=> {
-        cb(res)
-      },
-      error: (res,status,error)=>{
-        // 控制台查看响应文本，排查错误
-        message.error(`http://${url}/${path}错误,请输入正确的地址`);
-      }
-    })
   }
   setData(data){
     if (data){
@@ -164,6 +160,23 @@ export default class TxForm extends React.Component{
     }
     return <WrappedForm url={url} afterSubmit={this.setData.bind(this)}/>
   }
+  handleCheck(){
+    let script  = this.state.script
+    if (script){
+      handleAjax("post",'run/script',{script},
+         (data)=>{
+            if (data.errCode==0){
+              this.setState({errText:`The result is \n${JSON.stringify(data.result)}`})
+              message.success("Run done.")
+            }else
+              this.setState({errText:data.errText})                
+         }
+      )
+    }else{
+      this.setState({errText:""})
+      message.success("no script.")
+    }
+  }
   render(){
     const {hash,timestamp,insData,outsData,insColumns,outsColumns,script,assets,contractHash} = this.state
     if (insData){
@@ -190,7 +203,14 @@ export default class TxForm extends React.Component{
               <Table dataSource={outsData} columns={outsColumns} pagination={false}/>
             </Col>
           </Row>
-          <Alert type="info" message={"合约:"+contractHash} description={<pre>{script?script:"没有脚本"}</pre>}></Alert>
+          <Alert type="info" message={"合约:"+contractHash} description={
+               <div>
+                 <pre>{script?script:"没有脚本"}</pre>
+                 {script?<Button onClick={this.handleCheck.bind(this)}>执行</Button>:null}
+              </div>}
+          >
+          </Alert>
+          {this.state.errText ? <Alert type="error" message={<div style={{overflow:"auto"}}>{this.state.errText}</div>}></Alert> :null}
           <Alert type="info" message="数据:" description={<pre>{assets?JSON.stringify(assets,null,4):"没有数据"}</pre>}></Alert>
         </Panel>
       </Collapse>

@@ -1,3 +1,4 @@
+const EventEmitter = require("events")
 const util=require('util')
 const express = require('express')
 const bodyParser = require('body-parser');
@@ -127,10 +128,11 @@ const config = syncConfigFile(args)
 global.REWARD = 2.0
 global.NUM_ZEROS = 3
 global.NUM_FORK = 0
-global.TRANSACTION_TO_BLOCK = 3
+global.TRANSACTION_TO_BLOCK = 1
 global.contractTimeout = 5000
-let node
+global.emitter = new EventEmitter()
 
+let node
 const start= async ()=>{
   //make node 
   node = new Node({
@@ -304,20 +306,7 @@ app.get('/socket/emitSync/:event/:data',function(req,res){
 
 ////////////////node interface ////////////
 app.get('/node/info',function(req,res){
-  info={
-    "peers":node.nodes,
-    "me":node.me,
-    "name":node.name,
-    "entryNode":node.entryNode,
-    "entryNodes":node.entryNodes,
-    "clientNodesId":node.clientNodesId,
-    "wallet.address":node.wallet.address,
-    "wallet.balance":node.blockchain.utxo.getBalance(node.wallet.address),
-    "node.isMining": node.mining, //node.eMining.isSet(),
-    "node.isBlockSyncing":node.blockSyncing, //node.eBlockSyncing.isSet(),
-    "blockchain.maxindex":node.blockchain.maxindex(),
-    "blockchain.maxindex.nonce":node.blockchain.blocks[node.blockchain.maxindex()].nonce    
-  }
+  const info = node.getNodeInfo()
   if (config.debug)
     res.send(`<pre>${JSON.stringify(info,null,4)}</pre>`)
   else 
@@ -453,12 +442,7 @@ app.get('/wallet/me',function(req,res){
 
 app.get('/wallet/:address',async (req,res)=>{
   const address = req.params.address
-  let wallet=new Wallet()
-  if (address.length==64){
-    await wallet.chooseByAddress(address).catch(e=>res.end(e.stack))
-  }else{
-    wallet = await new Wallet(address).catch(e=>res.end(e.stack))
-  }
+  let  wallet = await new Wallet(address).catch(e=>res.end(e.stack))
   const balance = node.blockchain.utxo.getBalance(wallet.address)
   const json = {"address":wallet.address,"pubkey":wallet.pubkey64D,"blance":balance}
   if (config.debug)
@@ -493,7 +477,7 @@ app.get('/wallet/create/:name',async (req,res,next)=>{
   res.send(`</pre>${JSON.stringify(response,null,4)}</pre>`)
 })
 ////////////// trade interface /////////////
-app.post('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
+app.post('/trade',function(req,res,next){
   const script = req.body.script
   let assets = req.body.assets
   if (assets){
@@ -504,16 +488,16 @@ app.post('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
       return 
     }
   }
-  const nameFrom = req.params.nameFrom
-  const nameTo   = req.params.nameTo
-  const amount   = parseFloat(req.params.amount)
+  const nameFrom = req.body.inAddr
+  const nameTo   = req.body.outAddr
+  const amount   = parseFloat(req.body.amount)
   node.tradeTest(nameFrom,nameTo,amount,script,assets)
     .then(data=>{
         //res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
         res.json({errCode:0,errText:'',result:data})
       })
     .catch(error=>{
-       res.json({errCode:4,errText:error.message,result:null})
+       res.json({errCode:4,errText:error.stack,result:null})
       })
 })
 
@@ -549,6 +533,26 @@ app.get('/transaction/:hash',function(req,res){
     res.send(`<pre>${JSON.stringify(transaction,null,4)}</pre>`)
   else 
     res.send(transaction)
+})
+/////////////// aggregate //////////////////////
+app.get('/aggregate/account_pie',async function(req,res){
+  let result 
+  await node.blockchain.utxo.save()
+  result = await global.db.aggregate("utxo",[{$unwind:"$outs"},{$project:{"outAddr":"$outs.txout.outAddr","amount":"$outs.txout.amount"}},{$group:{"_id":"$outAddr","sum":{$sum:"$amount"}}},{$project:{"_id":0,name:{$substr:["$_id",0,6]},value:"$sum"}}])  
+  //console.log("account_pie",result)
+  if (config.debug) 
+    res.send(`<pre>${JSON.stringify(result,null,4)}</pre>`)
+  else 
+    res.send(result)
+})
+app.get('/aggregate/blocks_per_hour_bar',async function(req,res){
+  let result 
+  result = await global.db.aggregate("blockchain",[{$group:{_id:{$floor:{$divide:["$timestamp",360*24]}},value:{"$sum":1},value1:{"$sum":"$nonce"}}},{$sort:{_id:1}}])
+  //console.log("block_per_hour_bar",result)
+  if (config.debug) 
+    res.send(`<pre>${JSON.stringify(result,null,4)}</pre>`)
+  else 
+    res.send(result)
 })
 //////////others interface ////////////////
 app.get('/getEntryNode/entryNodes',function(req,res){
@@ -593,23 +597,38 @@ app.get('/syncOverallChain',function(req,res){
 })
 
 //script
-app.post('/check/script',function(req,res){
+app.post('/run/script',async function(req,res){
   const script = req.body.script || ""
-  let contract
+  const inAddr = req.body.inAddr || ""
   try{
-    contract = new Contract(script)
+    contract = new Contract({inAddr,script})
   }catch(error){
-    res.json({"errCode":1,"errText":error.message,"result":false})
+    res.json({"errCode":1,"errText":error.stack,"result":false})
     return
   }
   try{
-    result = contract.check()
-    res.json({"errCode":0,"errText":'',"result":result})
+    let p = await contract.run()
+    if (p && typeof p.then == "function"){
+      await p.then((result)=>res.json({"errCode":0,"errText":'',"result":result}))
+       .catch((error)=>res.json({"errCdde":1,"errText":error.stack,"result":false}))
+    }else{
+      res.json({"errCode":0,"errText":'',"result":p})
+    }
     return
   }catch(error){
-    res.json({"errCode":2,"errText":error.message,"result":false})
+    res.json({"errCode":2,"errText":error.stack,"result":false})
     return
   }
+})
+
+app.get("/emitter/:event/:msg",function(req,res){
+  global.emitter.emit(req.params.event,req.params.msg)
+  res.end(`have send [${req.params.event}] with message [${req.params.msg}].`)
+})
+
+app.get("*",function(req,res){
+  res.status(404)
+  res.send("找不到网页")
 })
 
 app.set('port', process.env.PORT || 4000);

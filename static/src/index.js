@@ -4,10 +4,16 @@ import ReactDOM from 'react-dom';
 import { Layout } from 'antd';
 const { Header, Footer, Sider, Content } = Layout;
 
+import Loadable from 'react-loadable';
 import MyMenu from './components/menu.jsx'
 import Home from './components/home.jsx'
 import StepsSample from './components/steps.jsx'
 import Blockchain from './components/blockchain.jsx'
+//const Blockchain = asyncComponent(() => import("./components/blockchain.jsx"));
+//const Blockchain = Loadable({
+//    loader: () => import('./components/'),
+//});
+
 import Rater from './components/rate.jsx'
 import MyTree from './components/tree.jsx'
 import TxForm from './components/txForm.jsx'
@@ -17,7 +23,6 @@ import Wallet from './components/wallet.jsx'
 import Node from './components/node.jsx'
 
 import {BrowserRouter,Route,Switch,Redirect,Link} from 'react-router-dom';
-
 
 class App extends  React.Component{
   constructor(props) {

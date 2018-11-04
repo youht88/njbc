@@ -1,9 +1,11 @@
+const _ = require("underscore")
 const fs=require('fs')
 const async = require("async")
 const utils = require("./utils.js")
 const logger = utils.logger.getLogger()
 const TXout = require("./transaction.js").TXout
 const Block = require("./block.js").Block
+const Wallet = require("./wallet.js").Wallet
 
 class UTXO{
   constructor(name){
@@ -352,14 +354,23 @@ class Chain{
     }
     return false
   }
-  findContract(uhash){
+  findContract(contractHash){
     let block = this.lastblock()
-    let find,transaction
+    let find,contract
     while (true){
       let data=block.data
       for (let TX of data){
-        if (TX.outs[0].contractHash == uhash){ 
-          transaction = TX
+        if (TX.outs[0].contractHash == contractHash){ 
+          contract =  {
+            blockIndex:block.index,
+            blockHash:block.hash,
+            blockNonce:block.nonce,
+            txHash:TX.hash,
+            address:TX.outs[0].outAddr,
+            script:TX.outs[0].script,
+            assets:TX.outs[0].assets,
+            owner :TX.ins[0].inAddr
+          }
           find=true
           break
         }
@@ -369,7 +380,7 @@ class Chain{
       block = this.findBlockByHash(block.prevHash)
       if (!block) break
     }
-    return transaction
+    return contract
   }
   findTransaction(uhash){
     let block = this.lastblock()
@@ -424,7 +435,61 @@ class Chain{
     }
     return null   
   }
- 
+  async findContractBalanceTo(blockIndex,from,to){
+     return new Promise(async (resolve,reject)=>{
+       try{
+         let wFrom,wTo,fromAddr,toAddr
+         if (!Wallet.isAddress(from)){
+           wFrom = await new Wallet(from)
+           fromAddr = wFrom.address
+         }else{
+           fromAddr = from
+         }
+         if (!Wallet.isAddress(to)){
+           wTo = await new Wallet(to)
+           toAddr = wTo.address
+         }else{
+           toAddr = to
+         }
+        let block=this.blocks[blockIndex]
+        let bindex=block.index
+        let amount = 0
+        while (bindex <= this.maxindex()){
+          const TXs = block.data
+          for (let tx of TXs){
+            if (tx.isCoinbase()) continue
+            if (tx.ins[0].inAddr == fromAddr && tx.outs[0].outAddr == toAddr){
+              amount += tx.outs[0].amount
+            }
+          }
+          bindex = bindex +1
+          block = this.findBlockByIndex(bindex)   
+        }
+        console.log("total amount",amount)
+        resolve(amount)
+      }catch(error){
+        reject(error)
+      }
+    })
+  }
+  findContractAssets(blockIndex,contractAddress){
+    let block=this.blocks[blockIndex]
+    let bindex=block.index
+    let assets = {}
+    while (bindex <= this.maxindex()){
+      const TXs = block.data
+      for (let tx of TXs){
+        if (tx.isCoinbase()) continue
+        if (tx.outs[0].outAddr == contractAddress){
+          _.extend(assets,tx.outs[0].assets)
+        }
+      }
+      bindex = bindex + 1
+      block = this.findBlockByIndex(bindex)   
+    }
+    console.log("total assets",assets)
+    return assets
+  }
   async moveBlockToPool(index){
     if (index!=this.maxindex())
       throw new Error(`can't move BlockToPool,index=${index}`)

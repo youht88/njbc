@@ -60,6 +60,7 @@ class Node{
     this.process=[this.blockProcess,this.minerProcess]
     
   }
+  
   initEvents(){
     this.emitter.on("test",()=>console.log(1234))
     this.emitter.on("mined",(blockDict)=>{
@@ -78,7 +79,30 @@ class Node{
       logger.debug("newTransaction",data.value.hash)
       this.transacted(data.value)
     })
-    
+
+    global.emitter.on("deployContract",(data={})=>{
+      this.tradeTest(data.owner,"",data.amount,data.script,data.assets)
+        .then((tx)=>logger.warn("合约部署已提交",tx.hash))
+        .catch((error)=>{throw error})
+    })
+    global.emitter.on("setAssets",(data={})=>{
+      this.tradeTest(data.caller,data.contractAddr,data.amount,"",data.assets)
+        .then((tx)=>logger.warn("新资源交易已提交",tx.hash))
+        .catch((error)=>{throw error})
+    })
+    global.emitter.on("payTo",(data={},cb)=>{
+      this.tradeTest(data.contractAddr,data.to,data.amount,"",data.assets)
+        .then((tx)=>{
+          logger.warn("新支付交易已提交",tx.hash)
+          if (cb) cb(null,tx.hash)
+        })
+        .catch((error)=>{
+          if (cb)
+            cb(error)
+          else
+            throw error
+        })
+    })
     this.emitter.once("start",async ()=>{
       //syncNode
       if (this.config.syncNode){
@@ -267,7 +291,11 @@ class Node{
       })
       
       socket.on('getNodeInfo',(args,cb)=>{
-        cb(this.getNodeInfo())
+        const nodeInfo = this.getNodeInfo()
+        if (cb)
+          cb(nodeInfo)
+        else 
+          socket.emit("getNodeInfoResponse",nodeInfo)
       })
       socket.on('getBlocks',(args,cb)=>{
         cb(this.getBlocks(args))
@@ -467,13 +495,25 @@ class Node{
     return result       
   }
   getNodeInfo(){
-    let nodeInfo = {
+    let peers=[]
+    for (let peer of this.nodes){
+      peers.push({"peer":peer,"isAlive":true})
+    }
+    let nodeInfo={
+      "peers":peers,
       "me":this.me,
+      "name":this.name,
       "entryNode":this.entryNode,
       "entryNodes":this.entryNodes,
-      "maxindex"  :this.blockchain.maxindex(),
-      "maxindexNonce":this.blockchain.lastblock()?this.blockchain.lastblock().nonce:null
+      "clientNodesId":this.clientNodesId,
+      "wallet.address":this.wallet.address,
+      "wallet.balance":this.blockchain.utxo.getBalance(this.wallet.address),
+      "node.isMining": this.mining, //node.eMining.isSet(),
+      "node.isBlockSyncing":this.blockSyncing, //node.eBlockSyncing.isSet(),
+      "blockchain.maxindex":this.blockchain.maxindex(),
+      "blockchain.maxindex.nonce":this.blockchain.blocks[this.blockchain.maxindex()].nonce    
     }
+
     return nodeInfo
   }
   getBlocks(args){
@@ -498,30 +538,34 @@ class Node{
     return localChain
   }
   async syncOverallChain(full=false){
-    let bestChain = this.blockchain
-    let fromIndex=0
-    let toIndex=0
-    if (full) 
-      fromIndex = 0
-    else{
-      fromIndex = bestChain.maxindex() - global.NUM_FORK + 1
-      if (fromIndex < 0)  fromIndex = 0
-    }
-    logger.debug("step1:get around node info")
-    const nodeInfo = await this.getARpcNodeInfo()
-    toIndex = fromIndex + 1 
+    let fromIndex,toIndex
     let bestNodes=[]
-    if (!nodeInfo)
-      return fromIndex
-    nodeInfo.map(info=>{
-      if (info.data.maxindex == toIndex){
+    
+    fromIndex =full?0:this.blockchain.maxindex() - global.NUM_FORK + 1 
+    if (fromIndex < 0) fromIndex=0
+
+    logger.debug("step1:get around node info")
+    const nodesInfo = await this.getARpcNodeInfo()
+    if (nodesInfo.length==0)  return "unknown"
+    
+    //确定具有最长链的节点组
+    toIndex = fromIndex + 1 
+    let otherIndex=0
+    nodesInfo.map(info=>{
+      let maxindex = info.data["blockchain.maxindex"]
+      if ( maxindex == toIndex){
         bestNodes.push(info)
-      }else if (info.data.maxindex>toIndex){
-        toIndex = info.data.maxindex
+      }else if (maxindex>toIndex){
+        toIndex = maxindex
         bestNodes=[info]
+      }else{
+        if (maxindex>otherIndex)
+          otherIndex = maxindex
       }        
     })
-    if (bestNodes.length==0) return fromIndex 
+    if (bestNodes.length==0) return otherIndex 
+    
+    //开始分配下载
     let range = toIndex - fromIndex + 1
     let count = bestNodes.length
     let promiseArray=[]
@@ -646,7 +690,7 @@ class Node{
       //将linkBlocks联入blockchain
       for (let i=1;i<linkBlocks.length;i++){
         await this.blockchain.moveBlockToPool(linkBlocks[i].index)
-        logger.info(`已经删除主链区块:${linkBlocks[i].index}`)
+        logger.info(`已经从主链删除区块:${linkBlocks[i].index}`)
       }
       for (let i=linkBlocks.length - 1;i>=0;i--){
         let linkBlock = linkBlocks[i]
@@ -658,7 +702,7 @@ class Node{
         await this.txPoolRemove(linkBlock)
         await linkBlock.save()
         await linkBlock.removeFromPool()
-        logger.info(`已经增加主链区块:${linkBlock.index}-${linkBlock.nonce}`)
+        logger.info(`已经增加区块:${linkBlock.index}-${linkBlock.nonce}到主链`)
         return true
       }
     }
@@ -742,11 +786,27 @@ class Node{
       return false
     }
   }
-
   async tradeTest(nameFrom,nameTo,amount,script="",assets={}){
     let wFrom,wTo
     wFrom = await new Wallet(nameFrom=='me'?this.me:nameFrom)
-    wTo   = await new Wallet(nameTo  =='me'?this.me:nameTo)
+    if (!script && !nameTo) throw new Error("转入账户与合约脚本不能同时为空")
+    if (script && nameTo) throw new Error("转入账户与合约脚本不能同时定义")
+    if (nameTo)
+      //定义了外部转入账户
+      wTo   = await new Wallet(nameTo  =='me'?this.me:nameTo)
+    else{
+      //由转出账户定义一个合约账户，从而完成合约部署
+      let inAddr = wFrom.address
+      let contractName = utils.hashlib.md5(inAddr,script,new Date().getTime())
+      wTo   =  new Wallet()
+      await wTo.chooseByName(contractName)
+          .catch(async e=>{
+            logger.error(`尚没有钱包，准备创建${contractName}的合约账户`)
+            wTo.create(contractName)
+              .then(()=>logger.info("合约账户创建成功"))
+              .catch(e=>console.log("error2",e))
+          })      
+    }
     if (wFrom.key.prvkey){
       let txDict = await this.trade(
         wFrom.key.prvkey,wFrom.key.pubkey,wTo.address,amount,script,assets).catch(error=>{
@@ -757,6 +817,7 @@ class Node{
       throw new Error(`${nameFrom} have not private key on this node`)
     }
   }
+
   async trade(inPrvkey,inPubkey,outAddress,amount,script="",assets={}){
     const newTX= await Transaction.newTransaction(
       inPrvkey,inPubkey,outAddress,amount,this.tradeUTXO,script,assets).catch(error=>{

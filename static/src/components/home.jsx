@@ -10,6 +10,30 @@ const FormItem = Form.Item;
 const Search = Input.Search;
 const {TextArea} = Input
 
+function handleAjax(method,url,path,data,cb=null){
+  return new Promise((resolve,reject)=>{
+    if (typeof data=="function")
+      cb = data
+    $.ajax({
+      type: method,    // 请求方式
+      data:data,
+      url: `http://${url}/${path}`,
+      success: (res, status, jqXHR)=> {
+        if (cb){
+          cb(res)
+          resolve()
+        }else
+          return resolve(res)
+      },
+      error: (res,status,error)=>{
+        // 控制台查看响应文本，排查错误
+        message.error(`http://${url}/${path}错误，请输入正确的地址`);
+        reject(new Error("error"))
+      }
+    })
+  })
+}  
+
 class BlockList extends React.Component{
   constructor(props) {
     super(props);
@@ -139,7 +163,13 @@ class TradeForm extends React.Component{
         message.error("新交易表单输入错误！")
         return false
       }
-      if (values.assets){
+      if (!values.outAddr && !values.script) {
+        message.error("输出地址和合约脚本不能同时为空！")
+        return false
+      }if (values.outAddr && values.script) {
+        message.error("不能同时定义输出地址和合约脚本！")
+        return false
+      }if (values.assets){
         try{
           JSON.parse(values.assets)
         }catch(error){
@@ -148,11 +178,11 @@ class TradeForm extends React.Component{
         }
       }
       if (values.script){
-        this.handleAjax('check/script',{script:values.script},
+        this.handleAjax('run/script',{inAddr:values.inAddr,script:values.script},
            (data)=>{
               if (data.errCode==0){
-                this.setState({errText:""})
-                message.success(`Check right.The result is ${JSON.stringify(data.result)}`)
+                this.setState({errText:`The result is \n${JSON.stringify(data.result)}`})
+                message.success("Check right.")
               }else
                 this.setState({errText:data.errText})                
            }
@@ -172,8 +202,12 @@ class TradeForm extends React.Component{
       }
       //message.warn(`trade/${values.inAddr}/${values.outAddr}/${values.amount}`)
       this.setState({data:null})
-      let path=`${values.inAddr}/${values.outAddr}/${values.amount}`
-      this.handleAjax(encodeURI(`trade/${path}`),{script:values.script,assets:values.assets},
+      this.handleAjax("trade",{
+            inAddr:values.inAddr,
+            outAddr:values.outAddr,
+            amount:values.amount,
+            script:values.script,
+            assets:values.assets},
         (value)=>{
            if (typeof(value)=="object"){
              if (value.errCode==0)
@@ -213,7 +247,7 @@ class TradeForm extends React.Component{
           >
             {getFieldDecorator('outAddr', {
               rules: [
-               {required: true, message: 'Please input outAddr' }],
+               {required: false, message: 'Please input outAddr' }],
             })(
               <Input placeholder="input outAddr" />
             )}
@@ -254,7 +288,7 @@ class TradeForm extends React.Component{
           </FormItem>
         </Form>
       </div>
-      {this.state.errText ? <Alert type="error" description={this.state.errText}></Alert> :null}
+      {this.state.errText ? <Alert type="error" message={<div style={{overflow:"auto"}}>{this.state.errText}</div>}></Alert> :null}
       {this.state.data ? <TxForm data={this.state.data} idx={0}/> : null}
      </div>
     );
@@ -294,33 +328,46 @@ class OneSearch extends React.Component{
 }
 const WrappedOneSearch = Form.create()(OneSearch)
 
-const data1 = [
-        {name: "JavaScript",value:2},
-        {name: "Java",value:1},
-        {name: "HTML/CSS",value:3}
-      ]
-const data2 = [
-        {name: "JavaScript",value:3,v2:9},
-        {name: "Java",value:2,v2:6},
-        {name: "HTML/CSS",value:1,v2:7}
-      ]
-const series1={
-        type:"line",
-        markPoint:
-         {data:[{type:"max",name:"最大值"}]}
-      }
-
 class GraphForm extends React.Component{
   constructor(props) {
     super(props);
+    /* the key mast be name,value 
+    const data1 = [
+            {name: "JavaScript",value:2},
+            {name: "Java",value:1},
+            {name: "HTML/CSS",value:3}
+          ]
+    const data2 = [
+            {name: "JavaScript",value:3},
+            {name: "Java",value:2},
+            {name: "HTML/CSS",value:1}
+          ]
+    */
+    this.series1={
+            type:"line",
+            markPoint:
+             {data:[{type:"max",name:"最大值"}]}
+          }
+    this.state={data1:[],data2:[]}
+
+  }
+  componentDidMount(){
+    Promise.all([
+      handleAjax("get",this.props.url,"aggregate/account_pie"),
+      handleAjax("get",this.props.url,"aggregate/blocks_per_hour_bar")
+    ]).then((result)=>{
+           this.setState({data1:result[0],data2:result[1]})
+         })
+      .catch((error)=>alert("error"))
+    
   }
   render(){
-    const size={width:"400px",height:"300px"}
+    const size={width:"600px",height:"400px"}
     return(
      <div>
       <Divider orientation="left"><h1>趋势与图表</h1></Divider>
-      <MyEcharts type={"pie"} title={"编程语言"} data={data1} size={size}/>
-      <MyEcharts type={"bar"} title={"语言2"} data={data2} size={size}/>
+      <MyEcharts type={"pie"} title={"账户金额"} data={this.state.data1} size={size}/>
+      <MyEcharts type={"line"} title={"每小时出块"} data={this.state.data2} size={size}/>
      </div>
     )
   }
@@ -333,8 +380,21 @@ export default class Home extends React.Component{
     this.state ={url:document.domain + ':' + port}
     this.handleAjax = this.handleAjax.bind(this)
   }
+  handleAjax(url,path,cb){
+    $.ajax({
+      type: 'get',    // 请求方式
+      url: `http://${url}/${path}`,
+      success: (res, status, jqXHR)=> {
+        cb(res)
+      },
+      error: (res,status,error)=>{
+        // 控制台查看响应文本，排查错误
+        message.error(`http://${url}/${path}错误，请输入正确的地址`);
+      }
+    })
+  }  
   componentDidMount() {
-    this.handleAjax('blockchain/maxindex',
+    this.handleAjax(this.state.url,'blockchain/maxindex',
       (value)=>{
         this.setState({maxindex:value})
         notification.success(
@@ -343,28 +403,15 @@ export default class Home extends React.Component{
            });
       })
   }
-  handleAjax(path,cb){
-    $.ajax({
-      type: 'GET',    // 请求方式
-      url: `http://${this.state.url}/${path}`,
-      success: (res, status, jqXHR)=> {
-        cb(res)
-      },
-      error: (res,status,error)=>{
-        // 控制台查看响应文本，排查错误
-        message.error(`http://${this.state.url}/${path}错误,请输入正确的地址`);
-      }
-    })
-  }
-   render(){
-    const {url,maxindex} = this.state
-    return(
-       <div>
-         <BlockList maxindex={maxindex} url={url}/>
-         <WrappedTradeForm url={url}/>
-         <WrappedOneSearch url={url}/>
-         <GraphForm url={url}/> 
-       </div>
-     )
-   }
+    render(){
+      const {url,maxindex} = this.state
+      return(
+         <div>
+           <BlockList maxindex={maxindex} url={url}/>
+           <WrappedTradeForm url={url}/>
+           <WrappedOneSearch url={url}/>
+           <GraphForm url={url}/> 
+         </div>
+       )
+     }
 }

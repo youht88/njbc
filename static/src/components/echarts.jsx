@@ -94,6 +94,34 @@ export default class MyEcharts extends React.Component{
           }
         break
       case 'line':
+        options = {
+            title:{
+              text:title,
+              left:"left"
+            },
+            dataset:{
+              source:data
+            },
+            tooltip:{},
+            legend:{left:"right"},
+            xAxis:{
+              type:"category"
+            },
+            yAxis:{
+              tpye:"value"
+            },
+            series : [
+              {
+                type: 'line',
+                areaStyle:{},
+                label: {
+                  normal: {
+                    formatter: "{d}% \n{b}",
+                  }
+                }
+              }
+            ]
+          }
         break
       default:
         options=option

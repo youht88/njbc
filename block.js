@@ -104,5 +104,4 @@ class Block{
     return true
   }
 }
-
 exports.Block = Block

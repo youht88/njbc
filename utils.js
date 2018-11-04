@@ -160,23 +160,54 @@ class Crypto{
 }
     
 class Hashlib{
-  sha256(data){
+  sha256(...data){
     const hash = crypto.createHash("sha256")
-    hash.update(JSON.stringify(data))
+    const str = data.map(i=>JSON.stringify(i)).join("")
+    hash.update(str)
     return hash.digest("hex")
   }
-  md5(data){
+  md5(...data){
     const hash = crypto.createHash("md5")
-    hash.update(JSON.stringify(data))
+    const str = data.map(i=>JSON.stringify(i)).join("")
+    hash.update(str)
     return hash.digest("hex")
   }
 }
-class Base64{
-  encode(data){
-    return new Buffer(data).toString('base64')
+class Bufferlib{
+  constructor(){
+    this.codeTypes = ['ascii','base64','utf8','hex','binary']
   }
-  decode(data){
-    return new Buffer(data,'base64').toString()
+  b64encode(str){
+    //对字符串进行base64编码
+    return new Buffer(str).toString('base64')
+  }
+  b64decode(str){
+    //对base64编码的字符串进行解码
+    return new Buffer(str,'base64').toString()
+  }
+  toBin(str,codeType='utf8'){
+    //将特定编码类型的字符串压缩为bin码
+    if (this.codeTypes.includes(codeType)){
+      if (typeof str !== "string") str = JSON.stringify(str)
+      return new Buffer(str,codeType)
+    }else{
+      throw new Error(`code type must be one of ${this.codeTypes}`)
+    }
+  }
+  toString(buffer,codeType='utf8'){
+    //将压缩的bin码转换为对应类型的string
+    if (!Buffer.isBuffer(buffer)) throw new Error("first arg type must be buffer")
+    if (this.codeTypes.includes(codeType)){
+      return buffer.toString(codeType)
+    }else{
+      throw new Error(`code type must be one of ${this.codeTypes}`)
+    }
+  }
+  transfer(str,fromCode,toCode){
+    if (!this.codeTypes.includes(fromCode) || !this.codeTypes.includes(toCode) )
+      throw new Error(`code type must be one of ${this.codeTypes}`)
+    if (typeof str !== "string") str = JSON.stringify(str)
+    return (new Buffer(str,fromCode)).toString(toCode)
   }
 }
 class Set{
@@ -502,7 +533,7 @@ exports.obj2json = function(obj){
 
 exports.crypto  = new Crypto()
 exports.hashlib = new Hashlib()
-exports.base64  = new Base64()
+exports.bufferlib  = new Bufferlib()
 exports.logger  = new Logger()
 exports.set     = new Set()
 exports.db      = new DB()

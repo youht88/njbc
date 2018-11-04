@@ -78,7 +78,7 @@
       this.setState({script:text,visible:true})
     }
     handleCheck(){
-      this.ajaxPost('check/script',{script:this.state.script},(value)=>{
+      this.ajaxPost('run/script',{script:this.state.script},(value)=>{
         if (value.errCode==0)
           this.setState({result:JSON.stringify(value.result)})
         else
