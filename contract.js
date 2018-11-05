@@ -17,6 +17,7 @@ class Contract{
     this.contractHash = args.contractHash ||""
     this.assets  = {}
     this.owner  = ""
+    this.version=""
     
     this.isDeployed = false
     this.caller = args.inAddr || ""
@@ -48,18 +49,20 @@ class Contract{
   }
   check(){
     if (!this.script && !this.contractHash) throw new Error("空的合约脚本")
-    if (this.script && this.contractHash) {
-      if (utils.hashlib.sha256(this.script) != this.contractHash) 
-        throw new Error("合约与合约摘要不匹配")
-    } 
-    if (this.script && !this.contractHash) {
+    if (this.script){
+      if (this.contractHash) {
+        if (utils.hashlib.sha256(this.script) != this.contractHash) 
+          throw new Error("合约与合约摘要不匹配")
+      }else{
+        this.contractHash = utils.hashlib.sha256(this.script)
+      }
+      this.version      = Contract.getVersion(this.script)
       //检查合约语法
       try{
         new vm.Script(this.script)
       }catch(error){
         throw error
       }  
-      this.contractHash = utils.hashlib.sha256(this.script)
       //标记deployed 和 owner
       this.deployed() 
       //throw new Error(`合约${this.contractHash}尚未部署`)  
@@ -91,12 +94,15 @@ class Contract{
       sandbox.emitter = new EventEmitter()
       sandbox._       = _
       sandbox.nowE8   = new Date(new Date().getTime()+28800000)
+      sandbox.version =function version(data){}
       sandbox.callback = (data)=>{
         console.log("callback函数返回",data)
       }
       sandbox.getInstance = (hash)=>{
         const contractDict = this.sandbox.getContract(hash)
         if (!contractDict) return null
+        let version = Contract.getVersion(contractDict.script)
+        Contract.checkVersion(this.version,version)
         vm.runInContext(contractDict.script,vm.createContext(this.sandbox),
              {timeout:global.contractTimeout})
         return { 
@@ -109,7 +115,8 @@ class Contract{
             contractHash : hash,
             script       : contractDict.script,
             assets       : contractDict.assets,
-            owner        : contractDict.owner
+            owner        : contractDict.owner,
+            version      : version
         }
       }
       sandbox.getContract = (contractHash)=>{
@@ -129,6 +136,7 @@ class Contract{
           this.blockHash  = (args)?args.blockHash :that.blockHash
           this.blockIndex = (args)?args.blockIndex:that.blockIndex
           this.blockNonce = (args)?args.blockNonce:that.blockNonce
+          this.version    = (args)?args.version   :that.version
         }
       
         getBlock(indexOrHash){
@@ -210,6 +218,80 @@ class Contract{
       return sandbox
     }catch(error){
       throw error
+    }
+  }
+  static getVersion(script){
+    let str = script.split("\n")[0].trim()
+    if(str.match(/^version\(/)){
+      return /\(([^()]+)\)/g.exec(str)[1].replace(/\"/g,"")
+    }else {
+      return "*"
+    }
+  }
+
+  static checkVersion(ver1="*",ver2="*"){
+    let tbase=10
+    let vNum=[0,0,0]
+    let base=[10,10]
+    let sign=[null,null]
+    let nonce=null
+    let ver3
+    if (ver1=="*") ver1="0.0.0"
+    if (ver2=="*") ver2=ver1
+    ver1=ver1.split('.')
+    ver2=ver2.split('.')
+    let vers = [ver1,ver2]
+    for (let i=0;i<vers.length;i++){    
+      let ver = vers[i]
+      if (ver[0].slice(0,1)=="^"){
+       sign[i]='^'
+       ver[0]=ver[0].slice(1)
+      }
+      for(let j=0 ;j<ver.length;j++){
+        if (ver[j]=="*") ver[j]='0'
+        if (i==0 && parseInt(ver[j])!=0 && nonce==null) nonce=j 
+        let item = ver[j]
+        if (item.length==1 && base[i]<10) base[i]=10
+        else if (item.length==2 && base[i]<100) base[i]=100
+        else if (item.length==3 && base[i]<1000) base[i]=1000
+        else {
+          ver[j]=item.slice(0,3)
+          base[i] = 1000
+        }
+      }
+    }
+    let len = ver1.length - ver2.length
+    for (let i=0;i<Math.abs(len);i++){
+      (len>0)?ver2.push(0):ver1.push(0)
+    }
+    if (vers[0][nonce]!='9' && vers[0][nonce]!='99' && vers[0][nonce]!='999'){
+       [...ver3] = vers[0]
+       ver3[nonce] = parseInt(ver3[nonce])+1
+       for (let i=nonce+1;i<ver3.length;i++){
+         ver3[i] = 0
+       }
+    }
+    vers.push(ver3)   
+    tbase = base.sort()[base.length - 1]
+    for (let i=0;i<vers.length;i++){
+      let ver=vers[i]
+      ver.reverse()
+      for(let j=0 ;j<ver.length;j++){
+        let item = ver[j]
+        vNum[i] += parseInt(item)*(tbase**j)
+      }
+    }
+    console.log(nonce,sign,base,vers,vNum)
+    ver1.reverse()
+    ver2.reverse()
+    ver3.reverse()    
+    if (sign[0]=='^'){
+      if (vNum[1]<vNum[0] || vNum[1]>=vNum[2])
+        throw new Error(`we need version ${ver1.join(".")} ~ ${ver3.join(".")},but the version is ${ver2.join(".")}`)
+    }else{
+      if (vNum[1]<vNum[0]){
+        throw new Error(`we need version >= ${ver1.join(".")},but version is ${ver2.join(".")}`)
+      }
     }
   }
 }    
