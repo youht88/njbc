@@ -1,9 +1,9 @@
 const fs=require('fs')
+const moment  = require('moment')
 const async = require("async")
 const utils = require("./utils.js")
-const _     = require("underscore")
 const logger = utils.logger.getLogger()
-const vm = require('vm')
+const {NodeVM,VMScript} = require('vm2')
 const Block = require('./block.js').Block
 const Transaction = require('./transaction.js').Transaction
 const Wallet = require('./wallet.js').Wallet
@@ -36,7 +36,7 @@ class Contract{
     this.blockIndex   = contractDict.blockIndex
     this.blockNonce   = contractDict.blockNonce
     this.txHash       = contractDict.txHash
-    this.contractAddr = contractDict.address
+    this.contractAddr = contractDict.contractAddr
     this.script       = contractDict.script
     this.assets       = contractDict.assets
     this.owner        = contractDict.owner
@@ -59,7 +59,7 @@ class Contract{
       this.version      = Contract.getVersion(this.script)
       //检查合约语法
       try{
-        new vm.Script(this.script)
+        new VMScript(this.script)
       }catch(error){
         throw error
       }  
@@ -73,56 +73,110 @@ class Contract{
     }
     return true
   }
-  async run(){
-    let result
+  run(cb=null){
+    let result1,result2,isCallback=false
     try{
-      result=vm.runInContext(this.script,vm.createContext(this.sandbox),{timeout:global.contractTimeout})
+      const vm = new NodeVM({
+           sandbox:this.sandbox,
+           nesting:true,
+           require:{
+             external:true
+           },
+           timeout:global.contractTimeout,
+           //wrapper:'none'
+        })
+      vm.freeze(this.sandbox,"sandbox")
+      //result1 = vm.run(this.script)
+      //console.log(result1)
+      //return result1
+      
+      let fun =vm.run(`module.exports = function(__callback) { ${this.script} }`)
+      result1 = fun((x)=>{
+         isCallback=true
+         if (cb)
+           result2 = cb(x)
+         else {
+           result2 = x
+         }
+      })
+      if (result1 && typeof result1.then=="function"){  //返回的是promise
+        return result1.then(x=>{
+                  console.log("处理异步返回",x)
+                  return x
+                })
+               .catch(error=>{
+                  console.log("处理异步错误")
+                  throw error
+                })
+      }else{  //返回的return 或 calback调用
+        if (!isCallback){
+          console.log("处理同步返回",result1)
+          return result1
+        }else{
+          console.log("处理同步callback调用",result2)
+          return result2
+        }
+      }
     }catch(error){
+      console.log("处理同步错误")
       throw error
     }
-    return result
   }
+
   setSandbox(sandbox){
     let that = this
     try{
-      sandbox.setTimeout = setTimeout
-      sandbox.console = console
       sandbox.async   = require("async")
       sandbox.crypto  = require('./utils.js').crypto
       sandbox.hashlib = require('./utils.js').hashlib
-      sandbox.base64  = require('./utils.js').bufferlib
+      sandbox.bufferlib  = require('./utils.js').bufferlib
       sandbox.emitter = new EventEmitter()
-      sandbox._       = _
-      sandbox.nowE8   = new Date(new Date().getTime()+28800000)
-      sandbox.version =function version(data){}
+      sandbox.nowE8   = (timestamp=null,formatStr=null)=>{
+        if (timestamp){
+          if (formatStr)
+            return moment(new Date(timestamp+28800000)).format(formatStr)  
+          else 
+            return new Date(timestamp+28800000)
+        }else{
+          if (formatStr)
+            return moment(new Date().getTime()+28800000).format(formatStr)
+          else
+            return new Date(new Date().getTime()+28800000)
+        }
+      }
+      sandbox.version = (ver)=>{Contract.checkVersion(ver,this.version)}
       sandbox.callback = (data)=>{
         console.log("callback函数返回",data)
       }
+      
       sandbox.getInstance = (hash)=>{
         const contractDict = this.sandbox.getContract(hash)
         if (!contractDict) return null
         let version = Contract.getVersion(contractDict.script)
         Contract.checkVersion(this.version,version)
-        vm.runInContext(contractDict.script,vm.createContext(this.sandbox),
-             {timeout:global.contractTimeout})
+        const parentContract = new Contract({script:contractDict.script})
+        const result = parentContract.run()
+        //console.log("???",parentContract)
+        return result
+        //return parentContract
         return { 
             isDeployed : true,
             blockHash    : contractDict.blockHash,
             blockIndex   : contractDict.blockIndex,
             blockNonce   : contractDict.blockNonce,
             txHash       : contractDict.txHash,
-            contractAddr : contractDict.address,
+            contractAddr : contractDict.contractAddr,
             contractHash : hash,
             script       : contractDict.script,
             assets       : contractDict.assets,
             owner        : contractDict.owner,
-            version      : version
+            version      : version,
         }
       }
-      sandbox.getContract = (contractHash)=>{
-          let contract = global.blockchain.findContract(contractHash)
-          return contract
-        }
+      sandbox["getContract"] = (contractHash)=>{
+        let contract = global.blockchain.findContract(contractHash)
+        return contract
+      }
 
       sandbox["Contract"] = class vmContract{
         constructor(args){
@@ -140,20 +194,24 @@ class Contract{
         }
       
         getBlock(indexOrHash){
-          if (typeof(indexOrHash)=="string"){
-            return global.blockchain.findBlockByHash(indexOrHash)
-          }else{
-            return global.blockchain.findBlockByIndex(indexOrHash)
+          try{
+            if (typeof(indexOrHash)=="string"){
+              return blockchain.findBlockByHash(indexOrHash)
+            }else{
+              return blockchain.findBlockByIndex(indexOrHash)
+            }
+          }catch(error){
+            throw error
           }
         }
         getLastBlock(){
-          return global.blockchain.lastblock()
+          return blockchain.lastblock()
         }
         getMaxIndex(){
-          return global.blockchain.maxindex()
+          return blockchain.maxindex()
         }
         getTransaction(hash){
-          return global.blockchain.findTransaction(hash)
+          return blockchain.findTransaction(hash)
         }
         async getTxPool(){
           return Transaction.getTxPool()
@@ -161,58 +219,71 @@ class Contract{
         async getAllAccounts(){
           return Wallet.getAll()
         }
-        async getBalance(address){
-          let wallet = await new Wallet(address)
-                        .catch((error)=>{throw error})
-          return global.blockchain.utxo.getBalance(wallet.address)
+        async getAccount(addressOrName){
+          let  wallet = await new Wallet(addressOrName).catch(error=>{throw error})
+          return {name:wallet.name,address:wallet.address,key:wallet.key}
+          //or return 
+          //return {name:wallet.name,address:wallet.address,pubkey:utils.bufferlib.b64decode(wallet.pubkey64D)}
         }
-        async getPayBalance(to){
-          let amount = await global.blockchain.findContractBalanceTo(
-              this.blockIndex,this.contractAddr,to)
-                         .catch((error)=>{throw error})
-          this.callback(`the amount is ${amount}`)
+        async getBalance(address){
+          if (!address) address=this.contractAddr
+          if (!Wallet.isAddress(address)){
+            let wallet = await new Wallet(address)
+                          .catch((error)=>{throw error})
+            address = wallet.address
+          }
+          return blockchain.utxo.getBalance(address)
+        }
+        async getBalancePaid(outAddr){
+          let amount = await blockchain.findBalanceFromContract({
+            contractHash:this.contractHash,outAddr:outAddr}).catch((error)=>{throw error})
+          logger.warn(`the amount is ${amount}`)
           return amount
         }
         async payTo(to,amount,assets={}){
-          global.emitter.emit("payTo",{
+          return new Promise((resolve,reject)=>{
+            global.emitter.emit("payTo",{
               contractAddr:this.contractAddr,
               to          :to,
               amount      :amount,
               assets      :assets
             },(err,result)=>{
-              if (err) throw err
+              if (err) reject(err)
+              resolve(result)
               logger.warn(`合约支付 ${amount} 给 ${to}的交易已提交`,result)
+            })
           })
         }
         preNewTransaction(inPubkey,outAddr,amount){
           if (!inPubkey){ //使用合约账户
           }
-          return Transaction.preNewTransaction(inPubkey,outAddr,amount,global.blockchain.utxo)      
+          return Transaction.preNewTransaction(inPubkey,outAddr,amount,blockchain.utxo)      
         }
         async newRawTransaction(raw){
           if (global.node)
             return Transaction.newRawTransaction(raw,global.node.tradeUTXO)
         }
-        async set(caller,amount,assets={}){
-          if (that.caller) caller = that.caller
-          if (!caller) return false
-          global.emitter.emit("setAssets",{
-              caller      :caller,
-              contractAddr:this.contractAddr,
-              amount      :amount,
-              assets      :assets
-            },(err,result)=>{
-              if (err) throw err
-              logger.warn(`更新资源 ${assets} 到 ${this.contractAddr}的交易已提交`,result)
+        async __set(assets={},caller=null,amount=0){
+          return new Promise((resolve,reject)=>{
+            if (that.caller) caller = that.caller
+            if (!caller)  return reject(new Error("必须指定caller地址"))
+            global.emitter.emit("setAssets",{
+                caller      :caller,
+                contractAddr:this.contractAddr,
+                amount      :amount,
+                assets      :assets,
+              },(err,result)=>{
+                if (err) return reject(err)
+                resolve(result)
+                logger.warn(`更新资源 ${JSON.stringily(assets)} 到 ${this.contractAddr}的交易已提交,txHash=${result}`)
+            })
           })
         }
-        get(key=null){
-          let assets =global.blockchain.findContractAssets(this.blockIndex,this.contractAddr)
-          if (!assets) return null
-          if (key)
-            return assets[key]
-          else 
-            return assets
+        __get(key=null,inAddr=null){
+          if (!this.isDeployed) return {}
+          let assets =global.blockchain.findContractAssets({
+            contractHash:this.contractHash,key:key,inAddr:inAddr})
+          return assets
         }
       } //define Contract class
       return sandbox
@@ -281,7 +352,7 @@ class Contract{
         vNum[i] += parseInt(item)*(tbase**j)
       }
     }
-    console.log(nonce,sign,base,vers,vNum)
+    //console.log(nonce,sign,base,vers,vNum)
     ver1.reverse()
     ver2.reverse()
     ver3.reverse()    

@@ -3,6 +3,9 @@ MAINTAINER youht
 
 RUN apk add curl --no-cache
 RUN apk add nodejs nodejs-npm --no-cache
+#ADD node /node
+#ENV $PATH=$PATH:/node/bin
+#RUN source
 
 RUN npm config set registry https://registry.npm.taobao.org
 RUN npm init --yes
@@ -36,14 +39,9 @@ RUN npm install log4js --save
 RUN npm install commander --save
 RUN npm install cheerio async --save
 RUN npm install request request-promise --save
-#supervisor
-RUN apk add supervisor --no-cache
-RUN mkdir /etc/supervisor.d
-RUN echo  [program:njbc]                 > /etc/supervisor.d/njbc.ini
-RUN echo  command = /njbc/node miner.js >> /etc/supervisor.d/njbc.ini
-RUN echo  directory = /njbc/            >> /etc/supervisor.d/njbc.ini
 
 RUN npm install react-bootstrap --save
 RUN npm install node-dev -g 
-
+RUN npm install vm2 --save-dev
+RUN npm install deepmerge --save
 WORKDIR /njbc

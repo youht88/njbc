@@ -63,7 +63,7 @@ class BlockList extends React.Component{
       title: <Icon type="clock-circle" style={{ fontSize: 16, color: '#08c' }} />,
       dataIndex: 'timestamp',
       key: 'timestamp',
-      render: text => <Tag color="#2a4">{moment(text,"X").fromNow()}</Tag>,
+      render: text => <Tag color="#2a4">{moment(text,"x").fromNow()}</Tag>,
     }];
     this.state={columns}
   }
@@ -279,12 +279,12 @@ class TradeForm extends React.Component{
               rules: [
                {required: false, message: 'Please input script' }],
             })(
-              <TextArea rows={10} placeholder="input script" style={{color:"green",fontWeight:"bold",backgroundColor:'black'}} />
+              <TextArea rows={10} placeholder="input script" style={{color:"lime",fontWeight:"bold",backgroundColor:'black'}} />
             )}
           </FormItem>
           <FormItem >
-            <Button type="primary" onClick={this.handleCheck.bind(this)} style={{margin:10}}>检查</Button>
-            <Button type="primary" onClick={this.handleSubmit} style={{margin:10}}>提交</Button>
+            <Button type="primary" onClick={this.handleCheck.bind(this)} style={{margin:10}}>检查+执行</Button>
+            <Button type="primary" onClick={this.handleSubmit} style={{margin:10}}>提交+部署</Button>
           </FormItem>
         </Form>
       </div>

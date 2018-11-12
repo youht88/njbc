@@ -31,7 +31,9 @@ logger.fatal(__footprint,"fatal color is magenta")
 process.on("unhandledRejection",error=>{
   logger.fatal("unhandledRejection",error.stack)
 })
-
+process.on('uncaughtException', (err) => {
+    console.error('Asynchronous error caught.', err);
+})
 //handle commander config & args
 const program = require('commander')
 program
@@ -152,7 +154,7 @@ const start= async ()=>{
   logger.debug("dbConnect...")
   await node.dbConnect()
   //创建钱包  
-  mywallet = new Wallet()
+  const mywallet = new Wallet()
   await mywallet.chooseByName(args.me)
     .catch(async e=>{
       logger.error(`尚没有钱包，准备创建${args.me}的密钥钱包`)
@@ -547,7 +549,7 @@ app.get('/aggregate/account_pie',async function(req,res){
 })
 app.get('/aggregate/blocks_per_hour_bar',async function(req,res){
   let result 
-  result = await global.db.aggregate("blockchain",[{$group:{_id:{$floor:{$divide:["$timestamp",360*24]}},value:{"$sum":1},value1:{"$sum":"$nonce"}}},{$sort:{_id:1}}])
+  result = await global.db.aggregate("blockchain",[{$group:{_id:{$floor:{$divide:["$timestamp",360*1000]}},value:{"$sum":1},value1:{"$sum":"$nonce"}}},{$sort:{_id:1}}])
   //console.log("block_per_hour_bar",result)
   if (config.debug) 
     res.send(`<pre>${JSON.stringify(result,null,4)}</pre>`)
@@ -562,7 +564,7 @@ app.get('/getEntryNode/entryNodes',function(req,res){
 })
 
 app.get('/mine',function(req,res){
-  const t1=Transaction.newCoinbase(node.wallet.address)
+  const t1=Transaction.newCoinbase(node.wallet.key.pubkey,node.wallet.address)
   const coinbase=JSON.parse(JSON.stringify(t1))
   //mine
   node.mine(coinbase,(err,newBlock)=>{
@@ -600,12 +602,14 @@ app.get('/syncOverallChain',function(req,res){
 app.post('/run/script',async function(req,res){
   const script = req.body.script || ""
   const inAddr = req.body.inAddr || ""
+  let contract
   try{
     contract = new Contract({inAddr,script})
   }catch(error){
     res.json({"errCode":1,"errText":error.stack,"result":false})
     return
   }
+  /*
   try{
     let p = await contract.run()
     if (p && typeof p.then == "function"){
@@ -619,6 +623,14 @@ app.post('/run/script',async function(req,res){
     res.json({"errCode":2,"errText":error.stack,"result":false})
     return
   }
+  */
+  try{
+    let result = await contract.run()
+    res.json({"errCode":0,"errText":'',"result":result})
+  }catch(error){
+    res.json({"errCode":2,"errText":error.stack,"result":false})
+  }
+  
 })
 
 app.get("/emitter/:event/:msg",function(req,res){

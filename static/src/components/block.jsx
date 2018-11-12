@@ -113,7 +113,7 @@ export default class Block extends React.Component{
           <p><strong>prevHash:</strong>
            <div><a onClick={this.getBlock.bind(this)}>{block.prevHash}</a></div></p>
           <p><strong>diffcult:</strong>{block.diffcult}</p>
-          <p><strong>timestamp:</strong>{moment(block.timestamp,'X').fromNow()}</p>
+          <p><strong>timestamp:</strong>{moment(block.timestamp,'x').fromNow()}</p>
           <p><strong>txCount:</strong>{block.data.length}</p>
           <p><strong>merkleRoot:</strong>{block.merkleRoot}</p>
           <Meta

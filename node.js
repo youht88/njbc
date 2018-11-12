@@ -81,17 +81,27 @@ class Node{
     })
 
     global.emitter.on("deployContract",(data={})=>{
-      this.tradeTest(data.owner,"",data.amount,data.script,data.assets)
+      this.tradeTest(data.owner,"",data.amount,data.script,data.assets,data.signNum)
         .then((tx)=>logger.warn("合约部署已提交",tx.hash))
         .catch((error)=>{throw error})
     })
-    global.emitter.on("setAssets",(data={})=>{
-      this.tradeTest(data.caller,data.contractAddr,data.amount,"",data.assets)
-        .then((tx)=>logger.warn("新资源交易已提交",tx.hash))
-        .catch((error)=>{throw error})
+    global.emitter.on("setAssets",(data={},cb)=>{
+      this.tradeTest(data.caller,data.contractAddr,data.amount,"",data.assets,data.signNum)
+        .then((tx)=>{
+            logger.warn("新资源交易已提交",tx.hash)
+            if (cb){
+              cb(null,tx.hash)
+            }
+          })
+        .catch((error)=>{
+            if (cb){
+              cb(error,null)
+            }
+            throw error
+          })
     })
     global.emitter.on("payTo",(data={},cb)=>{
-      this.tradeTest(data.contractAddr,data.to,data.amount,"",data.assets)
+      this.tradeTest(data.contractAddr,data.to,data.amount,"",data.assets,data.signNum)
         .then((tx)=>{
           logger.warn("新支付交易已提交",tx.hash)
           if (cb) cb(null,tx.hash)
@@ -103,6 +113,7 @@ class Node{
             throw error
         })
     })
+    
     this.emitter.once("start",async ()=>{
       //syncNode
       if (this.config.syncNode){
@@ -126,7 +137,7 @@ class Node{
           }
         }else{
           console.log("创建genesisBlock")
-          const coinbase=Transaction.newCoinbase(this.wallet.address)
+          const coinbase=Transaction.newCoinbase(this.wallet.key.pubkey,this.wallet.address)
           genesisBlock = await this.genesisBlock(coinbase)
         }
         
@@ -161,7 +172,10 @@ class Node{
       if (blocksDict.length!=0){
         this.blockPoolSync(blocksDict)
           .then(()=>this.minerProcess())
-          .catch((error)=>{logger.error(error.stack)})
+          .catch((error)=>{
+             logger.error(error.stack)
+             this.minerProcess()
+            })
       }else{
         this.minerProcess()
       }
@@ -173,11 +187,14 @@ class Node{
     try{
       const txPoolCount = await global.db.count("transaction",{})
       if (txPoolCount >= global.TRANSACTION_TO_BLOCK){ 
-        const coinbase=Transaction.newCoinbase(mywallet.address)
+        const coinbase=Transaction.newCoinbase(this.wallet.key.pubkey,this.wallet.address)
         //mine
         this.mine(coinbase)
           .then(()=>this.blockProcess())
-          .catch((error)=>{logger.error(error.stack)})
+          .catch((error)=>{
+            logger.error(error.stack)
+            this.blockProcess()
+          })
       }else{
         this.blockProcess()
       }
@@ -788,28 +805,54 @@ class Node{
   }
   async tradeTest(nameFrom,nameTo,amount,script="",assets={}){
     let wFrom,wTo
+    let inAddr,outAddr
+    let inPrvkey,inPubkey,outPubkey
+    let signNum
     wFrom = await new Wallet(nameFrom=='me'?this.me:nameFrom)
     if (!script && !nameTo) throw new Error("转入账户与合约脚本不能同时为空")
     if (script && nameTo) throw new Error("转入账户与合约脚本不能同时定义")
-    if (nameTo)
+    if (nameTo){
       //定义了外部转入账户
       wTo   = await new Wallet(nameTo  =='me'?this.me:nameTo)
-    else{
-      //由转出账户定义一个合约账户，从而完成合约部署
-      let inAddr = wFrom.address
+      outAddr = wTo.address
+      inAddr  = wFrom.address
+      console.log("tradeTest",JSON.stringify(wFrom))
+      inPrvkey=wFrom.key.prvkey
+      inPubkey=wFrom.key.pubkey
+      outPubkey=wTo.key.pubkey
+      signNum = 1 
+    }else{
+      //定义一个合约账户，并定义一个多重签名账户，从而完成合约部署
+      inAddr = wFrom.address
       let contractName = utils.hashlib.md5(inAddr,script,new Date().getTime())
       wTo   =  new Wallet()
       await wTo.chooseByName(contractName)
           .catch(async e=>{
             logger.error(`尚没有钱包，准备创建${contractName}的合约账户`)
-            wTo.create(contractName)
+            let key=utils.crypto.genRSAKey()
+            console.log("key",key)
+            console.log("wFrom",wFrom.key)
+            let [...pubkey] = wFrom.key.pubkey
+            pubkey.push(key.pubkey)
+            let [...prvkey] = wFrom.key.prvkey
+            prvkey.push(key.prvkey)
+            console.log(prvkey,pubkey)
+            wTo.create(contractName,prvkey,pubkey)
               .then(()=>logger.info("合约账户创建成功"))
               .catch(e=>console.log("error2",e))
-          })      
+          })
+      inPrvkey=wFrom.key.prvkey
+      inPubkey=wFrom.key.pubkey
+      outPubkey=wTo.key.pubkey
+      logger.fatal("tradeTest", utils.hashlib.sha256(outPubkey[0]),
+                                 utils.hashlib.sha256(outPubkey[1]),
+                                 Wallet.address(outPubkey),wTo.address)
+      outAddr = wTo.address
+      signNum = 2
     }
     if (wFrom.key.prvkey){
-      let txDict = await this.trade(
-        wFrom.key.prvkey,wFrom.key.pubkey,wTo.address,amount,script,assets).catch(error=>{
+      let txDict = await this.trade({
+        inPrvkey,inPubkey,inAddr,outPubkey,outAddr,amount,script,assets,signNum}).catch(error=>{
           throw error
         })
       return txDict
@@ -818,11 +861,18 @@ class Node{
     }
   }
 
-  async trade(inPrvkey,inPubkey,outAddress,amount,script="",assets={}){
-    const newTX= await Transaction.newTransaction(
-      inPrvkey,inPubkey,outAddress,amount,this.tradeUTXO,script,assets).catch(error=>{
-         throw error
-      })
+  async trade({inPrvkey,inPubkey,inAddr,outPubkey,outAddr,amount,script="",assets={},signNum}){
+    const newTX= await Transaction.newTransaction({
+           inPrvkey:inPrvkey,
+           inPubkey:inPubkey,
+           inAddr:inAddr,
+           outPubkey:outPubkey,
+           outAddr:outAddr,
+           amount:amount,
+           utxo:this.tradeUTXO,
+           script:script,
+           assets:assets,
+           signNum:signNum}).catch(error=>{throw error})
     if (!newTX) return
     let newTXdict=utils.obj2json(newTX)
     this.emitter.emit("transacted",newTXdict)
@@ -839,7 +889,7 @@ class Node{
         {"index":0,
         "prev_hash":"0",
         "data":[coinbase],
-        "timestamp":Math.round(new Date().getTime()/1000)
+        "timestamp":new Date().getTime()
         }
       ))
       newBlock.save()
@@ -861,7 +911,7 @@ class Node{
     //mine a block with a valid nonce
     const blockDict = { 
        index    :prevBlock.index + 1, 
-       timestamp:Math.round(new Date().getTime()/1000),
+       timestamp:new Date().getTime(),
        data     :txPool,
        prevHash :prevBlock.hash,
        nonce    :0

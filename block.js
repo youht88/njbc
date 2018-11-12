@@ -94,8 +94,9 @@ class Block{
       return false
     }
     //logger.debug(`${this.hash} is truly worked`)
-    //logger.debug("verify transaction data")
+    logger.debug("verify transaction data")
     for (let transaction of this.data){
+      console.log("transaction hash:",transaction.hash)
       if (!transaction.isValid()) {
         logger.debug(`${this.hash} is not worked because of transaction is not valid`)
         return false

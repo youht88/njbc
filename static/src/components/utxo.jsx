@@ -127,7 +127,7 @@
            <Modal
               title="脚本"
               visible={this.state.visible}
-              cancelText="检查"
+              cancelText="检查+执行"
               okText="关闭"
               closable={false}
               onOk={this.handleOk.bind(this)}

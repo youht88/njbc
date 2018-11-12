@@ -10,27 +10,13 @@ class TXin{
     this.prevHash=args.prevHash||""
     this.index   =args.index
     this.inAddr  =args.inAddr||""
-    if (args.pubkey64D){
-      this.pubkey64D=args.pubkey64D
-    }else{
-      const pubkey=args.pubkey || null      
-      if (!pubkey){
-        this.pubkey64D=""
-      }else{
-        //64 mean use base64encode 
-        this.pubkey64D=utils.bufferlib.b64encode(pubkey)
-      }
-    }
     if (args.signD){
       this.signD=args.signD
     }else{
-      const sign=args.sign || null
-      if (!sign){
-        this.signD=""
-      }else{
-        //D  mean decode bin to str
-        this.signD=sign
-      }
+      this.signD = []
+      args.sign.map((sign,i)=>{
+        return this.signD[i] = sign
+      })
     }
   }
   canUnlockWith(script){
@@ -46,6 +32,17 @@ class TXout{
   constructor(args){
     this.amount=args.amount   || 0
     this.outAddr=args.outAddr || ""
+    this.signNum = args.signNum || 1
+    if (args.pubkey64D){
+      this.pubkey64D=args.pubkey64D
+    }else if (args.pubkey){
+      this.pubkey64D=[]
+      args.pubkey.map((pubkey,i)=>{
+        return this.pubkey64D[i]=utils.bufferlib.b64encode(pubkey)
+      })
+    }else{
+      this.pubkey64D=[]
+    }
     this.contractHash = args.contractHash || ""
     this.script=args.script   || ""
     this.assets=args.assets   || {}
@@ -66,7 +63,7 @@ class Transaction{
     if (args.timestamp) {
       this.timestamp = args.timestamp
     }else{
-      this.timestamp = Math.round(new Date().getTime()/1000) 
+      this.timestamp = new Date().getTime() 
     }
     if (args.hash){
       this.hash=args.hash
@@ -84,37 +81,66 @@ class Transaction{
   } 
   isValid(){
     if (this.isCoinbase())
-      return (this.insLen==1 && this.outsLen==1 && this.outs[0].amount<=global.REWARD)       
+      return (this.insLen==1 && this.outsLen==1 && this.outs[0].amount<=global.REWARD)    
     logger.debug("transaction","begin verify:",this.hash)
     let outAddr=""
     for (let idx=0;idx<this.ins.length;idx++){
       let vin = this.ins[idx]
-      let outPubkey = utils.bufferlib.b64decode(vin.pubkey64D)
-      outAddr = vin.inAddr
+      
+      let prevTx = global.blockchain.findTransaction(vin.prevHash)
+      if (!prevTx.hash) return true //此方法仅为解决首次批量下载问题，目前尚未知更好的模式，过后修改
+      let vout = prevTx.outs[vin.index]
+      let outPubkey = vout.pubkey64D.map(pubkey64D=>{return utils.bufferlib.b64decode(pubkey64D)})
+      console.log(outPubkey)
+      outAddr = vout.outAddr
+      if (vout.signNum && vout.signNum>outPubkey.length){
+        logger.warn(`需要签名校验的数量${vin.signNum}大于提供的公钥数量`)
+        return false
+      }
+              
       //step1:verify it is mine 
-      if (!(outAddr == vin.inAddr && utils.hashlib.sha256(outPubkey)== vin.inAddr)){
-        logger.warn("transaction",outAddr,vin.inAddr)
+      if (!(outAddr == vin.inAddr && Wallet.address(outPubkey)== outAddr)){
+        logger.fatal("transaction",outPubkey,Wallet.address(outPubkey),vin.inAddr)
         logger.error("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? false")
         return false
       }
-      //logger.debug("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? ok")
+      logger.debug("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? ok")
       //step2:verify not to be changed!!!!
-      let isVerify=utils.crypto.verify(
-        vin.prevHash+vin.index.toString()+vin.inAddr,
-        vin.signD,
-        outPubkey
-       )
+      let signNum = 0 
+      let isVerify=false
+      for (let i=0 ;i<outPubkey.length;i++){
+        if (utils.crypto.verify(
+              vin.prevHash+vin.index.toString()+vin.inAddr,
+              vin.signD[i],
+              outPubkey[i])){
+          console.log(signNum++)
+          if (signNum >= vout.signNum){
+            isVerify=true
+            break
+          }
+        }
+      }
       if (!isVerify){
         logger.error("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? false")
         return false
       }
-      //logger.debug("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? ok")
+      logger.debug("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? ok")
     }
     return true
   }
-  static newCoinbase(outAddr){
-    let ins=[new TXin({"prevHash":"","index":-1,"inAddr":"","pubkey":null,"sign":null})]
-    let outs=[new TXout({"amount":parseFloat(global.REWARD.toPrecision(12)),"outAddr":outAddr,"script":"","assets":{}})]
+  static newCoinbase(outPubkey,outAddr){
+    console.log("newcoinbase",outPubkey)
+    let ins=[new TXin({"prevHash":"",
+                       "index":-1,
+                       "inAddr":"",
+                       "sign":[]
+                       })]
+    let outs=[new TXout({"amount":parseFloat(global.REWARD.toPrecision(12)),
+                         "outAddr":outAddr,
+                         "pubkey":outPubkey,
+                         "signNum":1,
+                         "script":"",
+                         "assets":{}})]
     return new Transaction({ins,outs})
   }
   static parseTransaction(data){
@@ -130,30 +156,37 @@ class Transaction{
     let timestamp=data["timestamp"]
     return new Transaction({hash,timestamp,ins,outs})
   }
-  static async newTransaction(inPrvkey,inPubkey,outAddress,amount,utxo,script="",assets={}){
+  static async newTransaction({inPrvkey,inPubkey,inAddr,outPubkey,outAddr,amount,utxo,script="",assets={},signNum=1}){
+    if (!utils.isArray(inPrvkey)) inPrvkey = [inPrvkey]
+    if (!utils.isArray(outPubkey)) outPubkey = [outPubkey]
     return new Promise((resolve,reject)=>{
-      let preNewTx = Transaction.preNewTransaction(inPubkey,outAddress,amount,utxo,script,assets)
+      let preNewTx = Transaction.preNewTransaction({
+          inAddr,inPubkey,outPubkey,outAddr,amount,utxo,script,assets,signNum})
       Transaction.sign(inPrvkey,preNewTx)
       Transaction.newRawTransaction(preNewTx,utxo)
         .then(result=>resolve(result))
         .catch(error=>reject(error))
     })
   }
-  static preNewTransaction(inPubkey,outAddr,amount,utxo,script="",assets={}){
+  static preNewTransaction({inAddr,inPubkey,outPubkey,outAddr,amount,utxo,script="",assets={},signNum}){
     if (amount<0) throw new Error("金额不能小于零")
     let ins=[]
     let outs=[]
-    let inAddr = Wallet.address(inPubkey)
+    logger.warn("!!!!",outPubkey,Wallet.address(outPubkey),outAddr)
+    if (!outAddr)
+      outAddr = Wallet.address(outPubkey)
     amount = parseFloat(amount)
     let todo = utxo.findSpendableOutputs(inAddr,amount)
-    //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3"},        
-    //                         "2543543543":{"index":0,"amount":"2"}
+    //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3","signNum":1},        
+    //                         "2543543543":{"index":0,"amount":"2","signNum":2}
     //                        }
     //     }
+    console.log("preNewTransaction",inAddr,todo)
     if (todo["acc"] < amount){
       logger.warn(`${inAddr} not have enough money.`)
       throw new Error("not enough money.")
     }
+    let maxSignNum=1
     for (let hash in todo["unspend"]){
       let output = todo["unspend"][hash]
       let prevHash = hash
@@ -161,12 +194,23 @@ class Transaction{
       ins.push({"prevHash":prevHash,
                 "index":index,
                 "inAddr":inAddr,
-                "pubkey":inPubkey,
-                "sign":""})    
+                "sign":[]})
+      if (output["signNum"]>maxSignNum)
+        maxSignNum = output["signNum"]    
     }
-    outs.push({"amount":amount,"outAddr":outAddr,"script":script,"assets":assets})
+    outs.push({"amount":amount,
+               "outAddr":outAddr,
+               "pubkey":outPubkey,
+               "signNum":signNum,
+               "script":script,
+               "assets":assets})
     if (todo["acc"] > amount){
-      outs.push({"amount":parseFloat((todo["acc"]-amount).toPrecision(12)),"outAddr":inAddr,"script":"","assets":{}})
+      outs.push({"amount":parseFloat((todo["acc"]-amount).toPrecision(12)),
+                 "outAddr":inAddr,
+                 "pubkey":inPubkey,
+                 "signNum":maxSignNum,  //????
+                 "script":"",
+                 "assets":{}})
     }
     return {rawIns:ins,rawOuts:outs}
   }
@@ -177,7 +221,10 @@ class Transaction{
       const rawIns=preNewTx.rawIns
       for (let rawIn of rawIns){
         let toSign=rawIn.prevHash+rawIn.index.toString()+rawIn.inAddr
-        let sign=utils.crypto.sign(toSign,inPrvkey)
+        let sign=[]
+        inPrvkey.map((key,i)=>{
+          return sign[i]=utils.crypto.sign(toSign,key)
+        })
         rawIn.sign = sign
       }
     }catch(error){

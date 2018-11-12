@@ -32,7 +32,9 @@ class Wallet{
         let account = accounts[0]
         this.name = name
         this.key={"prvkey":account.prvkey,"pubkey":account.pubkey}
-        this.pubkey64D=utils.bufferlib.b64encode(this.key.pubkey)
+        this.pubkey64D=this.key.pubkey.map(pubkey=>{
+          return utils.bufferlib.b64encode(pubkey)
+        })
         this.address=account.address
         resolve('success')
       }).catch(e=>reject(e))
@@ -47,9 +49,11 @@ class Wallet{
           return reject (new Error(`multi account addressed ${address}`))
         let account = accounts[0]
         this.name = account.name
-        this.key={"prvkey":account.prvkey,"pubkey":account.pubkey}
-        this.pubkey64D=utils.bufferlib.b64encode(this.key.pubkey)
-        this.address=address
+          this.key={"prvkey":account.prvkey,"pubkey":account.pubkey}
+          this.pubkey64D=this.key.pubkey.map(pubkey=>{
+            utils.bufferlib.b64encode(pubkey)
+          })
+          this.address=address
         resolve('success')
       }).catch(e=>reject(e))
    })
@@ -60,26 +64,42 @@ class Wallet{
   static async deleteByAddress(address){
     global.db.deleteMany("wallet",{"address":address})
   }
-  async create(name){
+  async create(name,prvkey=null,pubkey=null){
     return new Promise((resolve,reject)=>{
       try{
-        this.key=utils.crypto.genRSAKey(null,null)
-        const address=utils.hashlib.sha256(this.key.pubkey)
-        global.db.insertOne('wallet',{"name":name,"address":address,"pubkey":this.key.pubkey,"prvkey":this.key.prvkey})
+        if (prvkey && pubkey){
+          if (!utils.isArray(prvkey)) prvkey=[prvkey]
+          if (!utils.isArray(pubkey)) pubkey=[pubkey]
+          this.key={prvkey:prvkey,pubkey:pubkey}
+          console.log("create wallet",this.key)
+        }else if (!prvkey && !pubkey){ 
+          let key=utils.crypto.genRSAKey(null,null)
+          this.key={prvkey:[key.prvkey],pubkey:[key.pubkey]}
+        }else{
+          reject(new Error("公钥和私钥必须同时提供，或同时为空。")) 
+        }
+        const address=Wallet.address(this.key.pubkey)
+        global.db.insertOne('wallet',{"name":name,
+           "address":address,
+           "pubkey":this.key.pubkey,
+           "prvkey":this.key.prvkey})
         this.name = name
         this.address = address
-        this.pubkey64D = utils.bufferlib.b64encode(this.key.pubkey)
+        this.pubkey64D = this.key.pubkey.map(pubkey=>{
+          return utils.bufferlib.b64encode(pubkey)
+        })
+        console.log("pubkey64D",this.pubkey64D)
         resolve(this)
       }catch(e){
         reject(e) 
       }
    })
   }
-  isPrivate(){
-    return this.key && this.key.prvkey 
-  }
   static address(pubkey){
-    return utils.hashlib.sha256(pubkey)
+    if (utils.isArray(pubkey))
+      return utils.hashlib.sha256(pubkey.join(""))
+    else
+      return utils.hashlib.sha256(pubkey)
   }
   static async getAll(){
     return await global.db.findMany("wallet",{},{"projection":{"_id":0,"name":1,"address":1}})  

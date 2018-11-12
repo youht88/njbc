@@ -1,4 +1,4 @@
-const _ = require("underscore")
+const deepmerge = require("deepmerge")
 const fs=require('fs')
 const async = require("async")
 const utils = require("./utils.js")
@@ -40,6 +40,8 @@ class UTXO{
                       "index":idx,
                       "txout":new TXout({"amount":txout.amount,
                                      "outAddr":txout.outAddr,
+                                     "pubkey64D":txout.pubkey64D,
+                                     "signNum":txout.signNum,
                                      "script":txout.script})
                       })
           }
@@ -129,6 +131,8 @@ class UTXO{
                     "index":idx,
                     "txout":new TXout({"amount":txout.amount,
                                    "outAddr":txout.outAddr,
+                                   "pubkey64D":txout.pubkey64D,
+                                   "signNum":txout.signNum,
                                    "script":txout.script})
                                  })
     }
@@ -178,6 +182,8 @@ class UTXO{
             "txout":new TXout({
                 "amount" : prevTX.outs[txin.index].amount,
                 "outAddr": prevTX.outs[txin.index].outAddr,
+                "pubkey64D":prevTX.outs[txin.index].pubkey64D,
+                "signNum": prevTX.outs[txin.index].signNum,
                 "script" : prevTX.outs[txin.index].script})
                         })
         utxoSet[txin.prevHash] = outs
@@ -213,7 +219,10 @@ class UTXO{
       let outs = utxoSet[uhash]
       for (let out of outs){
         acc = acc + out["txout"].amount
-        unspend[uhash]={"index":out["index"],"amount":out["txout"].amount}
+        unspend[uhash]={"index":out["index"],
+                        "amount":out["txout"].amount,
+                        "pubkey64D":out["txout"].pubkey64D,
+                        "signNum":out["txout"].signNum}
         if (acc >=amount)
           break
       }
@@ -354,53 +363,63 @@ class Chain{
     }
     return false
   }
-  findContract(contractHash){
-    let block = this.lastblock()
-    let find,contract
-    while (true){
+  findThingsByCond({from=-1,direct=-1,maxtimes=null},cond){
+    if (!cond) return 
+    let block,index
+    let times=0,result={}
+    let maxindex=this.blocks.length - 1
+    if (from==-1) {
+      from = maxindex
+    }
+    index = from
+    while (index>=0 && index<=maxindex){
+      block = this.blocks[index] 
       let data=block.data
       for (let TX of data){
-        if (TX.outs[0].contractHash == contractHash){ 
-          contract =  {
-            blockIndex:block.index,
-            blockHash:block.hash,
-            blockNonce:block.nonce,
-            txHash:TX.hash,
-            address:TX.outs[0].outAddr,
-            script:TX.outs[0].script,
-            assets:TX.outs[0].assets,
-            owner :TX.ins[0].inAddr
-          }
-          find=true
-          break
+        if (!cond(block,TX)) continue;
+        times++
+        if (maxtimes && times >= maxtimes) {
+          break 
         }
       }
-      if (find)
-        break
-      block = this.findBlockByHash(block.prevHash)
-      if (!block) break
+      if (maxtimes && times >= maxtimes) {
+        break 
+      }
+      index += direct
     }
-    return contract
+  }
+  findContract(contractHash){
+    let result=null
+    this.findThingsByCond({maxtimes:1},(block,TX)=>{
+      if (TX.outs[0].contractHash==contractHash){
+        result =  {
+          blockIndex:block.index,
+          blockHash:block.hash,
+          blockNonce:block.nonce,
+          txHash:TX.hash,
+          contractAddr:TX.outs[0].outAddr,
+          script:TX.outs[0].script,
+          assets:TX.outs[0].assets,
+          owner :TX.ins[0].inAddr
+        }
+        return true
+      }
+      return false
+    })
+    return result
   }
   findTransaction(uhash){
-    let block = this.lastblock()
-    let find,transaction
-    while (true){
-      let data=block.data
-      for (let TX of data){
-        if (TX.hash == uhash){ 
-          transaction = TX
-          find=true
-          break
-        }
+    let result={}
+    this.findThingsByCond({maxtimes:1},(block,TX)=>{
+      if (TX.hash==uhash){
+        result =  TX 
+        return true
       }
-      if (find)
-        break
-      block = this.findBlockByHash(block.prevHash)
-      if (!block) break
-    }
-    return transaction
+      return false
+    })
+    return result
   }
+
   findPrevTransactions(block){
     let transactions={}
     for (let TX of block.data){
@@ -435,7 +454,7 @@ class Chain{
     }
     return null   
   }
-  async findContractBalanceTo(blockIndex,from,to){
+  async findContractBalanceTo1(blockIndex,from,to){
      return new Promise(async (resolve,reject)=>{
        try{
          let wFrom,wTo,fromAddr,toAddr
@@ -472,24 +491,66 @@ class Chain{
       }
     })
   }
-  findContractAssets(blockIndex,contractAddress){
-    let block=this.blocks[blockIndex]
-    let bindex=block.index
-    let assets = {}
-    while (bindex <= this.maxindex()){
-      const TXs = block.data
-      for (let tx of TXs){
-        if (tx.isCoinbase()) continue
-        if (tx.outs[0].outAddr == contractAddress){
-          _.extend(assets,tx.outs[0].assets)
-        }
+  async findBalanceFromContract({contractHash,outAddr}){
+    const contract = this.findContract(contractHash)
+    if (!contract) return 0
+    if (outAddr){
+      if (!Wallet.isAddress(outAddr)){
+        let wTo = await new Wallet(outAddr)
+        outAddr = wTo.address
       }
-      bindex = bindex + 1
-      block = this.findBlockByIndex(bindex)   
     }
+    return this.findBalanceTo({
+        from:contract.blockIndex,
+        direct:1,
+        inAddr:contract.contractAddr,
+        outAddr:outAddr
+      })
+  }
+  findBalanceTo({from=-1,direct,inAddr=null,outAddr=null}){
+    //if (!outAddr) throw new Error("输出地址不能为空")
+    let amount = 0
+    this.findThingsByCond({from:from,direct:direct},(block,tx)=>{
+      if (tx.isCoinbase()) return false
+      if ((!inAddr || tx.ins[0].inAddr == inAddr) && (!outAddr || tx.outs[0].outAddr == outAddr)){
+        amount += tx.outs[0].amount
+        return true
+      }
+      return false      
+    })
+    console.log("total amount",amount)
+    return amount
+  }
+  findContractAssets({contractHash,key=null,inAddr=null}){
+    const contract = this.findContract(contractHash)
+    if (!contract) return {}
+    return this.findAssets({
+         key:key,
+         from:contract.blockIndex,
+         outAddr:contract.contractAddr,
+         inAddr :inAddr
+      })
+  }
+  findAssets({key=null,from=0,outAddr=null,inAddr=null}){
+    //正序合并所有inAddr(如inAddr则表示不限定)输出给outAddr的assets数据资源
+    console.log("...",outAddr,inAddr)
+    //if (!outAddr) throw new Error("输出地址不能为空")
+    let assets = {}
+    this.findThingsByCond({from:from,direct:1},(block,tx)=>{
+      if (tx.isCoinbase()) return false
+      if ((!outAddr || tx.outs[0].outAddr == outAddr) && 
+          (!inAddr || tx.ins[0].inAddr == inAddr)){
+        assets = deepmerge(assets,tx.outs[0].assets)
+        return true
+      }
+      return false
+    })
+    if (key)
+      assets = assets[key]
     console.log("total assets",assets)
     return assets
   }
+  
   async moveBlockToPool(index){
     if (index!=this.maxindex())
       throw new Error(`can't move BlockToPool,index=${index}`)

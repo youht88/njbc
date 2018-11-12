@@ -119,7 +119,7 @@ export default class CardSample extends React.Component{
           <p><strong>prevHash:</strong>
           <Link to={`/block/${block.prev_hash}`}>{block.prev_hash.substr(0,6)}...</Link></p>
           <p><strong>diffcult:</strong>{block.diffcult}</p>
-          <p><strong>timestamp:</strong>{moment(block.timestamp,'X').fromNow()}</p>
+          <p><strong>timestamp1:</strong>{moment(block.timestamp,'x').fromNow()}</p>
           <p><strong>txCount:</strong>{block.data.length}</p>
           <p><strong>merkleRoot:</strong>{block.merkleRoot.substr(0,6)}...</p>
           <Meta
