@@ -11,7 +11,7 @@ class Block{
     this.nonce     = parseInt(args.nonce) || 0
     this.prevHash  = args.prevHash ||""
     this.timestamp = parseInt(args.timestamp)
-    this.diffcult  = args.diffcult || 0
+    this.diffcult  = parseInt(args.diffcult)
     this.merkleRoot= args.merkleRoot || ""
     this.data      = []
     for (var i=0 ;i < args.data.length;i++){
@@ -87,10 +87,16 @@ class Block{
   isValid(){
     if (this.index == 0 ) return true
     logger.debug(`verify block #${this.index}-${this.nonce}`)
+    if (this.index >= global.diffcultIndex && this.index < parseInt(global.diffcultIndex) + parseInt(global.ADJUST_DIFFCULT) - 1 && this.diffcult < global.diffcult) {
+      console.log(this.index,global.diffcultIndex,parseInt(global.diffcultIndex) + parseInt(global.ADJUST_DIFFCULT) - 1)
+      logger.error(`${this.hash} is not worked because of diffcult is ${this.diffcult} but little then ${global.diffcult}`)
+      return false
+    }
     //logger.debug("verify proof of work")
     this.updateHash()
+
     if (this.hash.slice(0,this.diffcult) != Array(this.diffcult+1).join('0')){
-      logger.debug(`${this.hash} is not worked because of WOF is not valid`)
+      logger.error(`${this.hash} is not worked because of WOF is not valid`)
       return false
     }
     //logger.debug(`${this.hash} is truly worked`)
@@ -98,7 +104,7 @@ class Block{
     for (let transaction of this.data){
       console.log("transaction hash:",transaction.hash)
       if (!transaction.isValid()) {
-        logger.debug(`${this.hash} is not worked because of transaction is not valid`)
+        logger.error(`${this.hash} is not worked because of transaction is not valid`)
         return false
       }
     }

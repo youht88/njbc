@@ -68,10 +68,13 @@ class Transaction{
     if (args.hash){
       this.hash=args.hash
     }else{
-      this.hash=utils.hashlib.sha256([JSON.stringify(this.ins),
-                              JSON.stringify(this.outs),
-                              this.timestamp])     
+      this.hash=utils.hashlib.sha256(this.preHeaderString())     
     }
+  }
+  preHeaderString(){
+    return [JSON.stringify(this.ins),
+            JSON.stringify(this.outs),
+            this.timestamp].join("")
   }
   dumps(){
     return JSON.stringify(this)
@@ -83,6 +86,10 @@ class Transaction{
     if (this.isCoinbase())
       return (this.insLen==1 && this.outsLen==1 && this.outs[0].amount<=global.REWARD)    
     logger.debug("transaction","begin verify:",this.hash)
+    if (utils.hashlib.sha256(this.preHeaderString())!=this.hash) {
+      logger.warn("交易内容与hash不一致")
+      return false
+    }
     let outAddr=""
     for (let idx=0;idx<this.ins.length;idx++){
       let vin = this.ins[idx]
@@ -91,7 +98,6 @@ class Transaction{
       if (!prevTx.hash) return true //此方法仅为解决首次批量下载问题，目前尚未知更好的模式，过后修改
       let vout = prevTx.outs[vin.index]
       let outPubkey = vout.pubkey64D.map(pubkey64D=>{return utils.bufferlib.b64decode(pubkey64D)})
-      console.log(outPubkey)
       outAddr = vout.outAddr
       if (vout.signNum && vout.signNum>outPubkey.length){
         logger.warn(`需要签名校验的数量${vin.signNum}大于提供的公钥数量`)
@@ -104,7 +110,7 @@ class Transaction{
         logger.error("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? false")
         return false
       }
-      logger.debug("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? ok")
+      //logger.debug("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? ok")
       //step2:verify not to be changed!!!!
       let signNum = 0 
       let isVerify=false
@@ -113,9 +119,10 @@ class Transaction{
               vin.prevHash+vin.index.toString()+vin.inAddr,
               vin.signD[i],
               outPubkey[i])){
-          console.log(signNum++)
+          signNum++
           if (signNum >= vout.signNum){
             isVerify=true
+            logger.info(`[已验证了${vout.signNum}条签名]`)
             break
           }
         }
@@ -124,12 +131,11 @@ class Transaction{
         logger.error("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? false")
         return false
       }
-      logger.debug("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? ok")
+      //logger.debug("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? ok")
     }
     return true
   }
   static newCoinbase(outPubkey,outAddr){
-    console.log("newcoinbase",outPubkey)
     let ins=[new TXin({"prevHash":"",
                        "index":-1,
                        "inAddr":"",
@@ -157,8 +163,8 @@ class Transaction{
     return new Transaction({hash,timestamp,ins,outs})
   }
   static async newTransaction({inPrvkey,inPubkey,inAddr,outPubkey,outAddr,amount,utxo,script="",assets={},signNum=1}){
-    if (!utils.isArray(inPrvkey)) inPrvkey = [inPrvkey]
-    if (!utils.isArray(outPubkey)) outPubkey = [outPubkey]
+    if (!Array.isArray(inPrvkey)) inPrvkey = [inPrvkey]
+    if (!Array.isArray(outPubkey)) outPubkey = [outPubkey]
     return new Promise((resolve,reject)=>{
       let preNewTx = Transaction.preNewTransaction({
           inAddr,inPubkey,outPubkey,outAddr,amount,utxo,script,assets,signNum})

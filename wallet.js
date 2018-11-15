@@ -68,10 +68,9 @@ class Wallet{
     return new Promise((resolve,reject)=>{
       try{
         if (prvkey && pubkey){
-          if (!utils.isArray(prvkey)) prvkey=[prvkey]
-          if (!utils.isArray(pubkey)) pubkey=[pubkey]
+          if (!Array.isArray(prvkey)) prvkey=[prvkey]
+          if (!Array.isArray(pubkey)) pubkey=[pubkey]
           this.key={prvkey:prvkey,pubkey:pubkey}
-          console.log("create wallet",this.key)
         }else if (!prvkey && !pubkey){ 
           let key=utils.crypto.genRSAKey(null,null)
           this.key={prvkey:[key.prvkey],pubkey:[key.pubkey]}
@@ -88,7 +87,6 @@ class Wallet{
         this.pubkey64D = this.key.pubkey.map(pubkey=>{
           return utils.bufferlib.b64encode(pubkey)
         })
-        console.log("pubkey64D",this.pubkey64D)
         resolve(this)
       }catch(e){
         reject(e) 
@@ -96,7 +94,7 @@ class Wallet{
    })
   }
   static address(pubkey){
-    if (utils.isArray(pubkey))
+    if (Array.isArray(pubkey))
       return utils.hashlib.sha256(pubkey.join(""))
     else
       return utils.hashlib.sha256(pubkey)

@@ -4,7 +4,6 @@ const RSA = require("node-rsa")
 const fs = require("fs")
 const path = require("path")
 const log4js = require("log4js");
-const util   = require('util');
 
 const MongoClient = require("mongodb")
 
@@ -530,9 +529,6 @@ class Http{
 }
 exports.obj2json = function(obj){
   return JSON.parse(JSON.stringify(obj))
-}
-exports.isArray = function(obj){
-  return util.isArray(obj)
 }
 
 exports.crypto  = new Crypto()

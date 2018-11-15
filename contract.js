@@ -216,10 +216,9 @@ class Contract{
         async getTxPool(){
           return Transaction.getTxPool()
         }
-        async getAllAccounts(){
-          return Wallet.getAll()
-        }
         async getAccount(addressOrName){
+          if (!addressOrName)
+            return Wallet.getAll()
           let  wallet = await new Wallet(addressOrName).catch(error=>{throw error})
           return {name:wallet.name,address:wallet.address,key:wallet.key}
           //or return 
@@ -263,12 +262,16 @@ class Contract{
           if (global.node)
             return Transaction.newRawTransaction(raw,global.node.tradeUTXO)
         }
-        async __set(assets={},caller=null,amount=0){
-          return new Promise((resolve,reject)=>{
-            if (that.caller) caller = that.caller
+        async __set(assets={},caller=null,amount=0,encrypt=false){
+          return new Promise(async (resolve,reject)=>{
+            if (that.caller && !caller) caller = that.caller
             if (!caller)  return reject(new Error("必须指定caller地址"))
+            let account = await new Wallet(caller).catch(error=>{return reject(error)})
+            if (encrypt) {
+              assets = utils.crypto.encrypt(assets,account.key.pubkey[0])
+            }
             global.emitter.emit("setAssets",{
-                caller      :caller,
+                caller      :account.address,
                 contractAddr:this.contractAddr,
                 amount      :amount,
                 assets      :assets,
@@ -279,11 +282,16 @@ class Contract{
             })
           })
         }
-        __get(key=null,inAddr=null){
-          if (!this.isDeployed) return {}
-          let assets =global.blockchain.findContractAssets({
-            contractHash:this.contractHash,key:key,inAddr:inAddr})
-          return assets
+        async __get(key=null,inAddr=null){
+          return new Promise(async (resolve,reject)=>{
+            if (!this.isDeployed) return resolve({})
+            let assets = await global.blockchain.findContractAssets({
+              contractHash:this.contractHash,key:key,inAddr:inAddr}).catch(error=>{
+                reject(error)
+              })
+            resolve(assets)
+          })
+          
         }
       } //define Contract class
       return sandbox

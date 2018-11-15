@@ -273,15 +273,16 @@ class Chain{
     global.blockchain = this
   }
   isValid(){
-    const blocks = this.block.slice(1)
-    for (var index=1 ;index < blocks;index ++){
+    const blocks = this.blocks.slice(1)
+    logger.info("verifing blockchain...",blocks.length)
+    for (var index=1 ;index < blocks.length;index ++){
       const curBlock = blocks[index]
       const prevBlock = blocks[index - 1]
       if (prevBlock.index+1 != curBlock.index){
         logger.error("index error",prevBlock.index,curBlock.index)
         return false
       }
-      if (!block.isValid()){
+      if (!curBlock.isValid()){
         //checks the hash
         logger.error(`curBlock ${index}-${curBlock.nonce}  false`)
         return false
@@ -390,22 +391,43 @@ class Chain{
   }
   findContract(contractHash){
     let result=null
-    this.findThingsByCond({maxtimes:1},(block,TX)=>{
-      if (TX.outs[0].contractHash==contractHash){
-        result =  {
-          blockIndex:block.index,
-          blockHash:block.hash,
-          blockNonce:block.nonce,
-          txHash:TX.hash,
-          contractAddr:TX.outs[0].outAddr,
-          script:TX.outs[0].script,
-          assets:TX.outs[0].assets,
-          owner :TX.ins[0].inAddr
+    if (!contractHash){
+      result = []
+      this.findThingsByCond({},(block,TX)=>{
+        if (TX.outs[0].contractHash.length!=0){
+          result.push({
+            contractHash:TX.outs[0].contractHash,
+            blockIndex:block.index,
+            blockHash:block.hash,
+            blockNonce:block.nonce,
+            txHash:TX.hash,
+            contractAddr:TX.outs[0].outAddr,
+            script:TX.outs[0].script,
+            assets:TX.outs[0].assets,
+            owner :TX.ins[0].inAddr
+          })
+          return true
+        } 
+        return false
+      })
+    }else{
+      this.findThingsByCond({maxtimes:1},(block,TX)=>{
+        if (TX.outs[0].contractHash==contractHash){
+          result =  {
+            blockIndex:block.index,
+            blockHash:block.hash,
+            blockNonce:block.nonce,
+            txHash:TX.hash,
+            contractAddr:TX.outs[0].outAddr,
+            script:TX.outs[0].script,
+            assets:TX.outs[0].assets,
+            owner :TX.ins[0].inAddr
+          }
+          return true
         }
-        return true
-      }
-      return false
-    })
+        return false
+      })
+    }
     return result
   }
   findTransaction(uhash){
@@ -419,7 +441,17 @@ class Chain{
     })
     return result
   }
-
+  findTransactionBlock(uhash){
+    let result={}
+    this.findThingsByCond({maxtimes:1},(block,TX)=>{
+      if (TX.hash==uhash){
+        result =  block 
+        return true
+      }
+      return false
+    })
+    return result
+  }
   findPrevTransactions(block){
     let transactions={}
     for (let TX of block.data){
@@ -521,7 +553,7 @@ class Chain{
     console.log("total amount",amount)
     return amount
   }
-  findContractAssets({contractHash,key=null,inAddr=null}){
+  async findContractAssets({contractHash,key=null,inAddr=null}){
     const contract = this.findContract(contractHash)
     if (!contract) return {}
     return this.findAssets({
@@ -531,27 +563,55 @@ class Chain{
          inAddr :inAddr
       })
   }
-  findAssets({key=null,from=0,outAddr=null,inAddr=null}){
+  async findAssets({key=null,from=0,outAddr=null,inAddr=null}){
     //正序合并所有inAddr(如inAddr则表示不限定)输出给outAddr的assets数据资源
     console.log("...",outAddr,inAddr)
+    let account
+    if (inAddr){
+      account = await new Wallet(inAddr).catch(error=>{return error})
+      inAddr = account.address
+    }
     //if (!outAddr) throw new Error("输出地址不能为空")
     let assets = {}
-    this.findThingsByCond({from:from,direct:1},(block,tx)=>{
+    let newAssets
+    this.findThingsByCond({from:from,direct:1},async (block,tx)=>{
       if (tx.isCoinbase()) return false
       if ((!outAddr || tx.outs[0].outAddr == outAddr) && 
           (!inAddr || tx.ins[0].inAddr == inAddr)){
-        assets = deepmerge(assets,tx.outs[0].assets)
+        if (typeof tx.outs[0].assets == "string") { //加密
+          if (inAddr){
+            newAssets = JSON.parse(utils.crypto.decrypt(tx.outs[0].assets,account.key.prvkey[0]))
+          }else{
+            newAssets = {encrypted:[tx.outs[0].assets]}
+          }
+        }else{
+          newAssets = tx.outs[0].assets
+        }
+        assets = deepmerge(assets,newAssets,{arrayMerge:
+          (target,source,options)=>{
+            for (let item of source){
+             if (target.indexOf(item)!==-1) continue;
+             target.push(item)
+            }
+            return target
+          }
+        })
         return true
       }
       return false
     })
-    if (key)
-      assets = assets[key]
+    if (key){
+      let keys=key.split(".")
+      assets = keys.reduce(function(xs, x) {
+        return (xs && xs[x]) ? xs[x] : null;
+      },assets);
+    }
     console.log("total assets",assets)
     return assets
   }
   
   async moveBlockToPool(index){
+    console.log("moveBlockToPool",index,this.maxindex())
     if (index!=this.maxindex())
       throw new Error(`can't move BlockToPool,index=${index}`)
     const blockDict = await global.db.findOne("blockchain",{"index":index},{"project":{"_id":0}})

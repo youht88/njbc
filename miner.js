@@ -61,7 +61,7 @@ const args = {
   "syncNode"   : program.syncNode,
   "full"       : program.full,
   "debug"      : program.debug,
-  "logging"    : program.logging
+  "logging"    : program.logging,
 }
 
 function syncConfigFile(args){
@@ -115,9 +115,10 @@ function syncConfigFile(args){
   if (args.syncNode)
     config.syncNode=args.syncNode
   args.syncNode = config.syncNode
-  
+    
   console.log(args)
-  if (!(args.me && args.entryNode && args.entryKad && args.db && args.httpServer))
+  if (!(args.me && args.entryNode && args.entryKad && 
+        args.db && args.httpServer ))
     throw Error("you must define me,entryNode,entryKad,db,httpServer arguments")               
   
   fs.writeFileSync("config.json",JSON.stringify(config,null,space=4))
@@ -128,9 +129,11 @@ const config = syncConfigFile(args)
 
 //set global 
 global.REWARD = 2.0
-global.NUM_ZEROS = 3
-global.NUM_FORK = 0
-global.TRANSACTION_TO_BLOCK = 1
+global.BLOCK_PER_HOUR = 3*60  //每小时出块数限制
+global.ADJUST_DIFF=20   //每多少块调整一次难度
+global.ZERO_DIFF = 5
+global.NUM_FORK = 6
+global.TRANSACTION_TO_BLOCK = 0
 global.contractTimeout = 5000
 global.emitter = new EventEmitter()
 
@@ -142,6 +145,8 @@ const start= async ()=>{
     "httpServer":args.httpServer,
     "entryNode":args.entryNode,
     "entryKad":args.entryKad,
+    "diffcult":args.diffcult,
+    "diffcultIndex":args.diffcultIndex,
     "me":args.me,
     "db":args.db,
     "display":args.display,
@@ -324,6 +329,14 @@ app.use('/blockchain',function(req,res,next){
 app.get('/blockchain/maxindex', function(req,res){
   const maxindex = node.blockchain.maxindex()
   res.send(maxindex.toString())
+})
+
+app.get('/blockchain/lastblock', function(req,res){
+  const block = node.blockchain.lastblock()
+  if (config.debug)
+    res.send(`<pre>${JSON.stringify(block,null,4)}</pre>`)
+  else 
+    res.send(block)
 })
 
 app.get('/blockchain',function(req,res){
@@ -536,6 +549,34 @@ app.get('/transaction/:hash',function(req,res){
   else 
     res.send(transaction)
 })
+
+app.get('/transactionBlock/:hash',function(req,res){
+  const hash = req.params.hash
+  const transaction = node.blockchain.findTransactionBlock(hash)
+  if (config.debug) 
+    res.send(`<pre>${JSON.stringify(transaction,null,4)}</pre>`)
+  else 
+    res.send(transaction)
+})
+
+////////////  contract interface ///////////////
+app.get('/contract/all',function(req,res){
+  const contracts = node.blockchain.findContract()
+  if (config.debug) 
+    res.send(`<pre>${JSON.stringify(contracts,null,4)}</pre>`)
+  else 
+    res.send(contracts)
+})
+
+app.get('/contract/:hash',function(req,res){
+  const hash = req.params.hash
+  const contract = node.blockchain.findContract(hash)
+  if (config.debug) 
+    res.send(`<pre>${JSON.stringify(contract,null,4)}</pre>`)
+  else 
+    res.send(contract)
+})
+
 /////////////// aggregate //////////////////////
 app.get('/aggregate/account_pie',async function(req,res){
   let result 
@@ -549,7 +590,7 @@ app.get('/aggregate/account_pie',async function(req,res){
 })
 app.get('/aggregate/blocks_per_hour_bar',async function(req,res){
   let result 
-  result = await global.db.aggregate("blockchain",[{$group:{_id:{$floor:{$divide:["$timestamp",360*1000]}},value:{"$sum":1},value1:{"$sum":"$nonce"}}},{$sort:{_id:1}}])
+  result = await global.db.aggregate("blockchain",[{$group:{_id:{$floor:{$divide:["$timestamp",3600*1000]}},value:{"$sum":1},value1:{"$sum":"$nonce"}}},{$sort:{_id:1}}])
   //console.log("block_per_hour_bar",result)
   if (config.debug) 
     res.send(`<pre>${JSON.stringify(result,null,4)}</pre>`)
@@ -568,6 +609,7 @@ app.get('/mine',function(req,res){
   const coinbase=JSON.parse(JSON.stringify(t1))
   //mine
   node.mine(coinbase,(err,newBlock)=>{
+    if(err) return res.send(err.message)
     if (config.debug)
       res.send(`<pre>${JSON.stringify(newBlock,null,4)}</pre>`)
     else 
