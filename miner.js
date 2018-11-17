@@ -28,8 +28,8 @@ logger.error(__footprint,"error color is red")
 logger.fatal(__footprint,"fatal color is magenta")
 
 //!!!import code to find error stack when unhandled Promise rejection found
-process.on("unhandledRejection",error=>{
-  logger.fatal("unhandledRejection",error.stack)
+process.on("unhandledRejection",(error,p)=>{
+  logger.fatal("unhandledRejection",error.stack,p)
 })
 process.on('uncaughtException', (err) => {
     console.error('Asynchronous error caught.', err);
@@ -129,11 +129,13 @@ const config = syncConfigFile(args)
 
 //set global 
 global.REWARD = 2.0
-global.BLOCK_PER_HOUR = 3*60  //每小时出块数限制
-global.ADJUST_DIFF=20   //每多少块调整一次难度
-global.ZERO_DIFF = 5
+global.BLOCK_PER_HOUR = 1*60  //每小时出块数限制
+global.ADJUST_DIFF=100   //每多少块调整一次难度
+global.ZERO_DIFF = 3
 global.NUM_FORK = 6
 global.TRANSACTION_TO_BLOCK = 0
+global.SYNC_BLOCKCHAIN = 10*1000*60  //多少毫秒同步blockchain
+global.CHECK_NODE =  5000*60 //多少毫秒检查节点连接情况
 global.contractTimeout = 5000
 global.emitter = new EventEmitter()
 
@@ -145,8 +147,6 @@ const start= async ()=>{
     "httpServer":args.httpServer,
     "entryNode":args.entryNode,
     "entryKad":args.entryKad,
-    "diffcult":args.diffcult,
-    "diffcultIndex":args.diffcultIndex,
     "me":args.me,
     "db":args.db,
     "display":args.display,
@@ -580,9 +580,9 @@ app.get('/contract/:hash',function(req,res){
 /////////////// aggregate //////////////////////
 app.get('/aggregate/account_pie',async function(req,res){
   let result 
-  await node.blockchain.utxo.save()
+  //await node.blockchain.utxo.save()
   result = await global.db.aggregate("utxo",[{$unwind:"$outs"},{$project:{"outAddr":"$outs.txout.outAddr","amount":"$outs.txout.amount"}},{$group:{"_id":"$outAddr","sum":{$sum:"$amount"}}},{$project:{"_id":0,name:{$substr:["$_id",0,6]},value:"$sum"}}])  
-  //console.log("account_pie",result)
+  console.log("account_pie",result)
   if (config.debug) 
     res.send(`<pre>${JSON.stringify(result,null,4)}</pre>`)
   else 
@@ -591,7 +591,7 @@ app.get('/aggregate/account_pie',async function(req,res){
 app.get('/aggregate/blocks_per_hour_bar',async function(req,res){
   let result 
   result = await global.db.aggregate("blockchain",[{$group:{_id:{$floor:{$divide:["$timestamp",3600*1000]}},value:{"$sum":1},value1:{"$sum":"$nonce"}}},{$sort:{_id:1}}])
-  //console.log("block_per_hour_bar",result)
+  console.log("block_per_hour_bar",result)
   if (config.debug) 
     res.send(`<pre>${JSON.stringify(result,null,4)}</pre>`)
   else 

@@ -83,6 +83,7 @@ class Contract{
              external:true
            },
            timeout:global.contractTimeout,
+           //lineOffset:73,
            //wrapper:'none'
         })
       vm.freeze(this.sandbox,"sandbox")
@@ -101,24 +102,24 @@ class Contract{
       })
       if (result1 && typeof result1.then=="function"){  //返回的是promise
         return result1.then(x=>{
-                  console.log("处理异步返回",x)
+                  logger.info("处理异步返回",x)
                   return x
                 })
                .catch(error=>{
-                  console.log("处理异步错误")
+                  logger.error("处理异步错误",error.stack)
                   throw error
                 })
       }else{  //返回的return 或 calback调用
         if (!isCallback){
-          console.log("处理同步返回",result1)
+          logger.info("处理同步返回",result1)
           return result1
         }else{
-          console.log("处理同步callback调用",result2)
+          logger.info("处理同步callback调用",result2)
           return result2
         }
       }
     }catch(error){
-      console.log("处理同步错误")
+      logger.error("处理同步错误",error.stack)
       throw error
     }
   }
@@ -130,13 +131,19 @@ class Contract{
       sandbox.crypto  = require('./utils.js').crypto
       sandbox.hashlib = require('./utils.js').hashlib
       sandbox.bufferlib  = require('./utils.js').bufferlib
+      sandbox.request = require('request')
       sandbox.emitter = new EventEmitter()
       sandbox.nowE8   = (timestamp=null,formatStr=null)=>{
         if (timestamp){
           if (formatStr)
             return moment(new Date(timestamp+28800000)).format(formatStr)  
-          else 
-            return new Date(timestamp+28800000)
+          else{ 
+            if (typeof timestamp == "string"){ 
+              return moment(new Date().getTime()+28800000).format(timestamp)
+            }else {
+              return new Date(timestamp+28800000)
+            }
+          }
         }else{
           if (formatStr)
             return moment(new Date().getTime()+28800000).format(formatStr)
@@ -156,9 +163,8 @@ class Contract{
         Contract.checkVersion(this.version,version)
         const parentContract = new Contract({script:contractDict.script})
         const result = parentContract.run()
-        //console.log("???",parentContract)
         return result
-        //return parentContract
+        /*return parentContract
         return { 
             isDeployed : true,
             blockHash    : contractDict.blockHash,
@@ -171,13 +177,25 @@ class Contract{
             assets       : contractDict.assets,
             owner        : contractDict.owner,
             version      : version,
-        }
+        */
       }
       sandbox["getContract"] = (contractHash)=>{
         let contract = global.blockchain.findContract(contractHash)
         return contract
       }
-
+      sandbox["ajax"] = async (url,options)=>{
+        /******  options struct  ********
+          method:  'get' or 'post'
+        ******/
+        return new Promise((resolve,reject)=>{
+          this.sandbox.request(url, function (error, response, body) {
+            if(error) return reject(error)
+            if (!error && response.statusCode == 200) {
+              resolve(body) // Show the HTML for the Google homepage.
+            }
+          })
+        })
+      }
       sandbox["Contract"] = class vmContract{
         constructor(args){
           this.contractAddr = (args)?args.contractAddr:that.contractAddr
@@ -289,6 +307,7 @@ class Contract{
               contractHash:this.contractHash,key:key,inAddr:inAddr}).catch(error=>{
                 reject(error)
               })
+            console.log("xyz",Object.keys(assets))
             resolve(assets)
           })
           

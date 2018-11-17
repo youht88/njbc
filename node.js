@@ -34,7 +34,6 @@ class Node{
     this.ioClient   = args.ioClient
     this.wallet     = null
     this.socketioClient = null
-    this.otherMined = false
     this.blockSyncing = false
     this.mining       = false
     this.miningPid    = null
@@ -63,7 +62,6 @@ class Node{
     this.checkNode = this.checkNode.bind(this)
     
     this.process=[this.blockProcess,this.minerProcess]
-    
   }
   
   initEvents(){
@@ -80,6 +78,12 @@ class Node{
       logger.debug("newBlock",`${data.value.index}-${data.value.nonce}`)
       this.mined(data.value)
     })
+
+    this.emitter.on("registeNode",(data)=>{
+      logger.debug("registeNode",`${data.value}`)
+      this.registeNode(data.value)
+    })
+
     this.emitter.on("newTransaction",(data)=>{
       logger.debug("newTransaction",data.value.hash)
       this.transacted(data.value)
@@ -155,8 +159,7 @@ class Node{
       
       //const nodeInfo = await this.getARpcNodeInfo()
       //logger.fatal("RoundRpcinfo:",JSON.stringify(nodeInfo))
-
-      this.blockProcess()
+      
       
       //sync blockchain
       await this.syncOverallChain(this.config.full).then(bestIndex=>{
@@ -170,12 +173,11 @@ class Node{
         this.syncOverallChain(false)
           .then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())})
-      },60000*5)
+      },global.SYNC_BLOCKCHAIN)
             
-      
+      this.blockProcess()
       this.minerProcess()
-
-    })
+     })
   }
   
   adjustDiffcult(endIndex){
@@ -189,7 +191,7 @@ class Node{
       this.diffcult++  
     }else if (block_per_hour < global.BLOCK_PER_HOUR){ //速度太慢，减少难度
       this.diffcult--
-      if (this.diffcult<1) this.diffcult=1
+      if (this.diffcult<global.ZERO_DIFF) this.diffcult=ZERO_DIFF
     }
     this.diffcultIndex = endIndex+1
     global.diffcultIndex = this.diffcultIndex
@@ -200,43 +202,45 @@ class Node{
   }
   
   async blockProcess(){
-    try{
-      if (this.blockSyncing) return
-      let maxindex = this.blockchain.maxindex()
-      let blocksDict = await global.db.findMany("blockpool",{"index":maxindex+1},{"projection":{_id:0}})
-      if (blocksDict.length!=0){
-        this.blockPoolSync(blocksDict)
-          .then(()=>{return this.blockProcess()})
-          .catch((error)=>{
-             logger.error(error.stack)
-             return this.blockProcess()
-            })
-      }else{
-        return this.blockProcess()
+    let maxindex = this.blockchain.maxindex()
+    let blocksDict = await global.db.findMany("blockpool",{"index":maxindex+1},{"projection":{_id:0}})
+    if (blocksDict.length!=0){
+      await this.blockPoolSync(blocksDict)
+        .catch((error)=>{logger.error(error.stack)})
+    }else{
+      let endBlock = await global.db.findOne("blockpool",{"index":{"$gte":maxindex+1}},{"projection":{_id:0},"sort":["index","ascending"]})
+      if (!endBlock) {
+        return setTimeout(this.blockProcess.bind(this),100)
       }
-    }catch(e){
-      throw e
+      if (maxindex+1 > endBlock.index -1 ) {
+        return setTimeout(this.blockProcess.bind(this),100)
+      } 
+      console.log("want block",maxindex+1,endBlock.index - 1)
+      
+      const promiseArray = this.getERpcData("getBlocks",{start:maxindex+1,end:endBlock.index - 1})
+      const results = await Promise.all(promiseArray)
+      
+      console.log("get block...",results)
+      for (let blockDict of results.data){
+        const block = new Block(blockDict)
+        if (block.isValid())
+          block.saveToPool()
+      }
     }
+    setTimeout(this.blockProcess.bind(this),100)
   }
+  
   async minerProcess(){
-    try{
-      if (this.mining) return
-      const txPoolCount = await global.db.count("transaction",{})
-      if (txPoolCount >= global.TRANSACTION_TO_BLOCK){ 
-        const coinbase=Transaction.newCoinbase(this.wallet.key.pubkey,this.wallet.address)
-        //mine
-        this.mine(coinbase)
-          .then(()=>{return this.minerProcess()})
-          .catch((error)=>{
-            logger.error(error.stack)
-            return this.minerProcess()
-          })
-      }else{
-        return this.minerProcess()
-      }
-    }catch(e){
-      throw e
+    const txPoolCount = await global.db.count("transaction",{})
+    if (txPoolCount < global.TRANSACTION_TO_BLOCK) {
+      return
     }
+    const coinbase=Transaction.newCoinbase(this.wallet.key.pubkey,this.wallet.address)
+    //mine
+    await this.mine(coinbase)
+      .then((data)=>{logger.warn("minerProcess:",data)})
+      .catch((error)=>{logger.error(error.stack)})
+    return setTimeout(this.minerProcess.bind(this),100)
   }
 
   async dbConnect(){
@@ -321,7 +325,6 @@ class Node{
           this.socketioClient.emit('broadcast',data)
         }
         socket.broadcast.emit('broadcast',data)
-        //this.handleData(data)
         this.emitter.emit(data.type,data)
       })
       
@@ -330,7 +333,7 @@ class Node{
         if (this.socketioClient){
           this.socketioClient.emit('broadcastUp',data)
         }
-        this.handleData(data)
+        this.emitter.emit(data.type,data)
       })
       
       socket.on('getNodes',(data,cb)=>{
@@ -440,13 +443,12 @@ class Node{
       this.socketioClient.on('broadcast',(data)=>{
         logger.debug(`客户端${this.socketioClient.id}接收到广播broadcast,${JSON.stringify(data)}`)
         this.ioServer.sockets.emit('broadcast',data)
-        //this.handleData(data)
         this.emitter.emit(data.type,data)
       })
       this.socketioClient.on('broadcastDown',(data)=>{
         logger.debug(`客户端${this.socketioClient.id}接收到广播broadcastDown,${JSON.stringify(data)}`)
         this.ioServer.sockets.emit('broadcastDown',data)
-        this.handleData(data)
+        this.emitter.emit(data.type,data)
       })
       this.socketioClient.on('flushEntryNodes',(entryNodes)=>{
         [...this.entryNodes] = entryNodes
@@ -513,7 +515,7 @@ class Node{
       //console.log(that.nodes,node)
       if (node != that.me) 
         that.defineInterface(node)
-    },10000)
+    },global.CHECK_NODE)
   }
   registeNode(peers){
     this.nodes = utils.set.union(this.nodes,peers)
@@ -597,7 +599,8 @@ class Node{
         }
       }
     }) 
-    if (!localChain.isValid()) throw new Error("本地chain不合法，重新下载正确的chain")
+    //默认不检查本地blockchain，节省时间
+    //if (!localChain.isValid()) throw new Error("本地chain不合法，重新下载正确的chain")
     return localChain
   }
   async syncOverallChain(full=false){
@@ -742,7 +745,6 @@ class Node{
      }
   }  
   async blockPoolSync(blocksDict){
-    if (this.blockSyncing) return false
     this.blockSyncing = true
     for (let blockDict of blocksDict){
       let block = new Block(blockDict)
@@ -770,17 +772,14 @@ class Node{
         await linkBlock.removeFromPool()
         logger.info(`已经增加区块:${linkBlock.index}-${linkBlock.nonce}到主链`)
         this.adjustDiffcult(linkBlock.index)
-        this.blockSyncing = false
         
-        /*console.log(this.blockchain.maxindex(),this.miningPid)
-        this.otherMined=true
         if (this.miningPid){
-          console.log(`otherMind,and will kill pid:${this.miningPid}`)
+          logger.warn(`will kill findNonce pid:${this.miningPid}`)
           exec(`kill ${this.miningPid}`)
           this.miningPid=null
           this.mining=false 
-        }
-        */
+        }        
+        this.blockSyncing = false
         return true
       }
     }
@@ -951,6 +950,7 @@ class Node{
         {"index":0,
         "prev_hash":"0",
         "data":[coinbase],
+        "diffcult":global.ZERO_DIFF,
         "timestamp":new Date().getTime()
         }
       )
@@ -961,14 +961,6 @@ class Node{
   }
   
   async mine(coinbase,cb){
-    if (this.blockSyncing){
-      if (cb) cb(new Error("正在同步数据..."),null)
-      return null
-    }
-    if (this.mining){
-      if (cb) cb(new Error("正在挖矿..."),null)
-      return null
-    }
     this.mining = true
     //sync transaction from txPool
     let txPool = [] 
@@ -986,13 +978,13 @@ class Node{
        timestamp:new Date().getTime(),
        data     :txPool,
        prevHash :prevBlock.hash,
+       diffcult :this.diffcult,
        nonce    :0
       }
-    logger.warn(`is mining block ${blockDict.index}`)
+    logger.warn(`is mining block ${blockDict.index},diffcult:${blockDict.diffcult}`)
     const newBlock = await this.findNonce(blockDict)
     if (!newBlock){
       this.mining=false
-      logger.warn("other miner mined")
       return "other miner mined"
     }
     logger.info(`[end] mine ${newBlock.index}-${newBlock.nonce}`)
@@ -1021,7 +1013,6 @@ class Node{
   }
   async findNonce(blockDict){
     return new Promise((resolve,reject)=>{
-      this.otherMined=false
       console.time("mine")
       const p = fork('./findNonce.js')
       this.miningPid = p.pid
@@ -1029,9 +1020,11 @@ class Node{
         let newBlock = new Block(data)
         console.timeEnd("mine")
         logger.info(`block ${newBlock.index} mined. Nonce: ${newBlock.nonce} , hash: ${newBlock.hash}`)
-        resolve(newBlock) 
+        return resolve(newBlock) 
       })
-      blockDict.diffcult = this.diffcult      
+      p.on('exit',()=>{
+        return resolve(null)
+      })
       p.send(blockDict)
     })    
   }
@@ -1090,23 +1083,6 @@ class Node{
     this.ioServer.emit("broadcast",message)
   }
   
-  handleData(data){
-    switch (data.type){
-      case "newBlock":
-        this.mined(data.value)
-        break
-      case "newTX":
-        //self.transacted(data.get("value"))
-        break
-      case "registeNode":
-        this.registeNode(data.value)
-        break
-      case "setKV":
-      case "getKV":
-      case "testBroadcast":
-        break
-    }
-  }
 }
 
 //module.exports = Node
