@@ -129,13 +129,13 @@ const config = syncConfigFile(args)
 
 //set global 
 global.REWARD = 2.0
-global.BLOCK_PER_HOUR = 1*60  //每小时出块数限制
+global.BLOCK_PER_HOUR = 3*60  //每小时出块数限制
 global.ADJUST_DIFF=100   //每多少块调整一次难度
 global.ZERO_DIFF = 3
 global.NUM_FORK = 6
 global.TRANSACTION_TO_BLOCK = 0
 global.SYNC_BLOCKCHAIN = 10*1000*60  //多少毫秒同步blockchain
-global.CHECK_NODE =  5000*60 //多少毫秒检查节点连接情况
+global.CHECK_NODE =  1000*60 //多少毫秒检查节点连接情况
 global.contractTimeout = 5000
 global.emitter = new EventEmitter()
 
@@ -227,16 +227,16 @@ app.get('/crypto',function(req,res){
   console.log(hashlib.md5({"b":2.00,"a":1.0}))
   
   //crypto
-  const crypto = utils.crypto
-  const key = crypto.genRSAKey()
-  encrypted = crypto.encrypt("abcd",key.pubkey)
+  const rsa = utils.rsa
+  const key = rsa.generateKeys()
+  encrypted = rsa.encrypt("abcd",key.pubkey)
   console.log("encrypted",encrypted)
-  decrypted = crypto.decrypt(encrypted,key.prvkey)
+  decrypted = rsa.decrypt(encrypted,key.prvkey)
   console.log("decrypted",decrypted)
   
-  sign = crypto.sign({"a":1,"b":2},key.prvkey)
+  sign = rsa.sign({"a":1,"b":2},key.prvkey)
   console.log("sign",sign)
-  verify = crypto.verify({"a":1,"b":2.0},sign,key.pubkey)
+  verify = rsa.verify({"a":1,"b":2.0},sign,key.pubkey)
   console.log("verify",verify)
   res.send('ok')
 })
@@ -447,7 +447,7 @@ app.get('/wallet/all',async function(req,res){
 app.get('/wallet/me',function(req,res){
   const balance = node.blockchain.utxo.getBalance(node.wallet.address)
   const json = {"address":node.wallet.address,
-              "pubkey":node.wallet.pubkey64D,
+              "pubkey":node.wallet.pubkey,
               "balance":balance}
   if (config.debug)
     res.send(`</pre>${JSON.stringify(json,null,4)}</pre>`)
@@ -459,7 +459,7 @@ app.get('/wallet/:address',async (req,res)=>{
   const address = req.params.address
   let  wallet = await new Wallet(address).catch(e=>res.end(e.stack))
   const balance = node.blockchain.utxo.getBalance(wallet.address)
-  const json = {"address":wallet.address,"pubkey":wallet.pubkey64D,"blance":balance}
+  const json = {"address":wallet.address,"pubkey":wallet.pubkey,"blance":balance}
   if (config.debug)
     res.send(`</pre>${JSON.stringify(json,null,4)}</pre>`)
   else
@@ -487,7 +487,7 @@ app.get('/wallet/create/:name',async (req,res,next)=>{
   let balance = node.blockchain.utxo.getBalance(wallet.address)
   let response= {"name":name,
           "address":wallet.address,
-          "pubkey":wallet.pubkey64D,
+          "pubkey":wallet.pubkey,
           "balance":balance}
   res.send(`</pre>${JSON.stringify(response,null,4)}</pre>`)
 })

@@ -156,12 +156,12 @@ class Contract{
         console.log("callback函数返回",data)
       }
       
-      sandbox.getInstance = (hash)=>{
+      sandbox.getInstance = (hash,caller)=>{
         const contractDict = this.sandbox.getContract(hash)
         if (!contractDict) return null
         let version = Contract.getVersion(contractDict.script)
         Contract.checkVersion(this.version,version)
-        const parentContract = new Contract({script:contractDict.script})
+        const parentContract = new Contract({script:contractDict.script,inAddr:caller})
         const result = parentContract.run()
         return result
         /*return parentContract
@@ -191,7 +191,9 @@ class Contract{
           this.sandbox.request(url, function (error, response, body) {
             if(error) return reject(error)
             if (!error && response.statusCode == 200) {
-              resolve(body) // Show the HTML for the Google homepage.
+              resolve(body) 
+            }else{
+              resolve(response)
             }
           })
         })
@@ -209,6 +211,7 @@ class Contract{
           this.blockIndex = (args)?args.blockIndex:that.blockIndex
           this.blockNonce = (args)?args.blockNonce:that.blockNonce
           this.version    = (args)?args.version   :that.version
+          this.caller     = (args)?args.caller    :that.caller
         }
       
         getBlock(indexOrHash){
@@ -239,8 +242,6 @@ class Contract{
             return Wallet.getAll()
           let  wallet = await new Wallet(addressOrName).catch(error=>{throw error})
           return {name:wallet.name,address:wallet.address,key:wallet.key}
-          //or return 
-          //return {name:wallet.name,address:wallet.address,pubkey:utils.bufferlib.b64decode(wallet.pubkey64D)}
         }
         async getBalance(address){
           if (!address) address=this.contractAddr
@@ -286,7 +287,7 @@ class Contract{
             if (!caller)  return reject(new Error("必须指定caller地址"))
             let account = await new Wallet(caller).catch(error=>{return reject(error)})
             if (encrypt) {
-              assets = utils.crypto.encrypt(assets,account.key.pubkey[0])
+              assets = utils.ecc.enCipher(assets,account.key.prvkey[0])
             }
             global.emitter.emit("setAssets",{
                 caller      :account.address,
@@ -296,21 +297,19 @@ class Contract{
               },(err,result)=>{
                 if (err) return reject(err)
                 resolve(result)
-                logger.warn(`更新资源 ${JSON.stringily(assets)} 到 ${this.contractAddr}的交易已提交,txHash=${result}`)
+                logger.warn(`更新资源 ${JSON.stringify(assets)} 到 ${this.contractAddr}的交易已提交,txHash=${result}`)
             })
           })
         }
-        async __get(key=null,inAddr=null){
+        async __get(key=null,inAddr=null,list=false){
           return new Promise(async (resolve,reject)=>{
             if (!this.isDeployed) return resolve({})
             let assets = await global.blockchain.findContractAssets({
-              contractHash:this.contractHash,key:key,inAddr:inAddr}).catch(error=>{
+              contractHash:this.contractHash,key:key,inAddr:inAddr,list:list}).catch(error=>{
                 reject(error)
               })
-            console.log("xyz",Object.keys(assets))
             resolve(assets)
           })
-          
         }
       } //define Contract class
       return sandbox

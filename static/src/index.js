@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom';
 import { Layout } from 'antd';
 const { Header, Footer, Sider, Content } = Layout;
 
-import Loadable from 'react-loadable';
+//import Loadable from 'react-loadable';
 import MyMenu from './components/menu.jsx'
 import Home from './components/home.jsx'
 import StepsSample from './components/steps.jsx'

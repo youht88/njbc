@@ -162,20 +162,25 @@ class Node{
       
       
       //sync blockchain
+      /*logger.warn("start1","this.syncOverallChain")
       await this.syncOverallChain(this.config.full).then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())
       })
+      logger.warn("start2","resetUTXO")      
+      */
       
       //sync utxo
       this.resetUTXO()
-
+      
       setInterval(()=>{
         this.syncOverallChain(false)
           .then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())})
       },global.SYNC_BLOCKCHAIN)
-            
+      
+      logger.warn("start3","blockProcess")         
       this.blockProcess()
+      logger.warn("start4","minerProcess")
       this.minerProcess()
      })
   }
@@ -187,9 +192,9 @@ class Node{
     let eTime =   this.blockchain.findBlockByIndex(endIndex).timestamp
     let block_per_hour = Math.round(global.ADJUST_DIFF/((eTime - sTime)/3600000))
     let oldDiffcult = this.diffcult
-    if (block_per_hour > global.BLOCK_PER_HOUR){//速度太快，增加难度
+    if (block_per_hour > global.BLOCK_PER_HOUR*1.1){//速度太快，增加难度
       this.diffcult++  
-    }else if (block_per_hour < global.BLOCK_PER_HOUR){ //速度太慢，减少难度
+    }else if (block_per_hour < global.BLOCK_PER_HOUR*0.9){ //速度太慢，减少难度
       this.diffcult--
       if (this.diffcult<global.ZERO_DIFF) this.diffcult=ZERO_DIFF
     }
@@ -202,45 +207,59 @@ class Node{
   }
   
   async blockProcess(){
-    let maxindex = this.blockchain.maxindex()
-    let blocksDict = await global.db.findMany("blockpool",{"index":maxindex+1},{"projection":{_id:0}})
-    if (blocksDict.length!=0){
-      await this.blockPoolSync(blocksDict)
-        .catch((error)=>{logger.error(error.stack)})
-    }else{
-      let endBlock = await global.db.findOne("blockpool",{"index":{"$gte":maxindex+1}},{"projection":{_id:0},"sort":["index","ascending"]})
-      if (!endBlock) {
-        return setTimeout(this.blockProcess.bind(this),100)
+    try{
+      let maxindex = this.blockchain.maxindex()
+      let blocksDict = await global.db.findMany("blockpool",{"index":maxindex+1},{"projection":{_id:0}})
+      if (blocksDict.length!=0){
+        await this.blockPoolSync(blocksDict)
+          .catch((error)=>{logger.error(error.stack)})
+      }else{
+        let endBlock = await global.db.findOne("blockpool",{"index":{"$gte":maxindex+1}},{"projection":{_id:0},"sort":["index","ascending"]})
+        if (!endBlock) {
+          return setTimeout(this.blockProcess.bind(this),0)
+        }
+        if (maxindex+1 > endBlock.index -1 ) {
+          return setTimeout(this.blockProcess.bind(this),0)
+        } 
+        console.log("want block",maxindex+1,endBlock.index - 1)
+        
+        const promiseArray = this.getARpcData("getBlocks",{start:maxindex+1,end:endBlock.index - 1})
+        const results = await Promise.all(promiseArray)
+        
+        console.log("get block...",results)
+        if (results.length<=0) 
+          return setTimeout(this.blockProcess.bind(this),0)
+        for (let result of results){
+          for (let blockDict of result.data){
+            const block = new Block(blockDict)
+            if (block.isValid())
+              block.saveToPool()
+          }
+        }
       }
-      if (maxindex+1 > endBlock.index -1 ) {
-        return setTimeout(this.blockProcess.bind(this),100)
-      } 
-      console.log("want block",maxindex+1,endBlock.index - 1)
-      
-      const promiseArray = this.getERpcData("getBlocks",{start:maxindex+1,end:endBlock.index - 1})
-      const results = await Promise.all(promiseArray)
-      
-      console.log("get block...",results)
-      for (let blockDict of results.data){
-        const block = new Block(blockDict)
-        if (block.isValid())
-          block.saveToPool()
-      }
+      setTimeout(this.blockProcess.bind(this),0)
+    }catch(error){
+      logger.fatal("blockProcess",error.stack)
+      setTimeout(this.blockProcess.bind(this),0)
     }
-    setTimeout(this.blockProcess.bind(this),100)
   }
   
   async minerProcess(){
-    const txPoolCount = await global.db.count("transaction",{})
-    if (txPoolCount < global.TRANSACTION_TO_BLOCK) {
-      return
+    try{
+      const txPoolCount = await global.db.count("transaction",{})
+      if (txPoolCount < global.TRANSACTION_TO_BLOCK) {
+        return
+      }
+      const coinbase=Transaction.newCoinbase(this.wallet.key.pubkey,this.wallet.address)
+      //mine
+      await this.mine(coinbase)
+        .then((data)=>{logger.warn("minerProcess:",data)})
+        .catch((error)=>{logger.error(error.stack)})
+      return setTimeout(this.minerProcess.bind(this),0)
+    }catch(error){
+      logger.fatal("minerProcess",error.stack)
+      setTimeout(this.minerProcess,bind(this),0)
     }
-    const coinbase=Transaction.newCoinbase(this.wallet.key.pubkey,this.wallet.address)
-    //mine
-    await this.mine(coinbase)
-      .then((data)=>{logger.warn("minerProcess:",data)})
-      .catch((error)=>{logger.error(error.stack)})
-    return setTimeout(this.minerProcess.bind(this),100)
   }
 
   async dbConnect(){
@@ -360,7 +379,7 @@ class Node{
     })
   }
   async defineInterface(peer){
-    this.socketioClient = this.ioClient("http://"+peer,{'reconnectionAttempts':5,query:{'token':'youht'}})
+    this.socketioClient = this.ioClient("http://"+peer,{'reconnectionAttempts':20,query:{'token':'youht'}})
     this.socketioClient.on('connect_error',(error)=>{
       logger.debug(`客户端${this.socketioClient.id}发生链接错误${error}`)
       this.socketioClient.disconnect()
@@ -412,12 +431,12 @@ class Node{
     
       this.socketioClient.on('reconnect_error',(error)=>{
         logger.debug(`客户端${this.socketioClient.id}重连${this.entryNode}错误${error}`)
-        this.socketioClient.disconnect()
+        //this.socketioClient.disconnect()
       })
     
       this.socketioClient.on('reconnect_failed',()=>{
         logger.debug(`客户端${this.socketioClient.id}重连${this.entryNode}失败`)
-        this.socketioClient.disconnect()
+        //this.socketioClient.disconnect()
       })
     
       this.socketioClient.on('test',(data,cb)=>{
@@ -464,6 +483,7 @@ class Node{
     //返回promise数组
     let promiseArray=[]
     if (this.socketioClient){
+      console.log("getARpcData","EntryNode")
       promiseArray.push(new Promise((resolve)=>{
         this.socketioClient.emit(event,args,(data)=>{
           resolve({_type:"entryNode",_id:"",data:data})
@@ -471,6 +491,7 @@ class Node{
       }))
     }
     for (let id in this.ioServer.sockets.sockets){
+      console.log("getARpcData",id)
       promiseArray.push(new Promise((resolve)=>{
         this.ioServer.sockets.connected[id].emit(event,args,(data)=>{
           resolve({_type:"clientNode",_id:id,data:data})
@@ -546,7 +567,9 @@ class Node{
   }
   async getARpcNodeInfo(){
     let promiseArray = this.getARpcData("getNodeInfo",{})
+    console.log("getARpcNodeInfo",promiseArray)
     let result = await Promise.all(promiseArray)
+    console.log("getARpcNodeInfo","done")
     return result       
   }
   getNodeInfo(){
@@ -613,7 +636,7 @@ class Node{
     logger.debug("step1:get around node info")
     const nodesInfo = await this.getARpcNodeInfo()
     if (nodesInfo.length==0)  return "unknown"
-    
+    logger.debug("step1.11111",nodesInfo)
     //确定具有最长链的节点组
     toIndex = fromIndex + 1 
     let otherIndex=0
@@ -630,7 +653,7 @@ class Node{
       }        
     })
     if (bestNodes.length==0) return otherIndex 
-    
+    logger.debug("step2.22222")
     //开始分配下载
     let range = toIndex - fromIndex + 1
     let count = bestNodes.length
@@ -890,7 +913,7 @@ class Node{
       await wTo.chooseByName(contractName)
           .catch(async e=>{
             logger.error(`尚没有钱包，准备创建${contractName}的合约账户`)
-            let key=utils.crypto.genRSAKey()
+            let key=utils.ecc.generateKeys()
             console.log("key",key)
             console.log("wFrom",wFrom.key)
             let [...pubkey] = wFrom.key.pubkey

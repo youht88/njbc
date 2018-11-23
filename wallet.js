@@ -32,9 +32,6 @@ class Wallet{
         let account = accounts[0]
         this.name = name
         this.key={"prvkey":account.prvkey,"pubkey":account.pubkey}
-        this.pubkey64D=this.key.pubkey.map(pubkey=>{
-          return utils.bufferlib.b64encode(pubkey)
-        })
         this.address=account.address
         resolve('success')
       }).catch(e=>reject(e))
@@ -50,9 +47,6 @@ class Wallet{
         let account = accounts[0]
         this.name = account.name
           this.key={"prvkey":account.prvkey,"pubkey":account.pubkey}
-          this.pubkey64D=this.key.pubkey.map(pubkey=>{
-            utils.bufferlib.b64encode(pubkey)
-          })
           this.address=address
         resolve('success')
       }).catch(e=>reject(e))
@@ -71,8 +65,8 @@ class Wallet{
           if (!Array.isArray(prvkey)) prvkey=[prvkey]
           if (!Array.isArray(pubkey)) pubkey=[pubkey]
           this.key={prvkey:prvkey,pubkey:pubkey}
-        }else if (!prvkey && !pubkey){ 
-          let key=utils.crypto.genRSAKey(null,null)
+        }else if (!prvkey && !pubkey){
+          let key=utils.ecc.generateKeys(null,null)
           this.key={prvkey:[key.prvkey],pubkey:[key.pubkey]}
         }else{
           reject(new Error("公钥和私钥必须同时提供，或同时为空。")) 
@@ -84,9 +78,6 @@ class Wallet{
            "prvkey":this.key.prvkey})
         this.name = name
         this.address = address
-        this.pubkey64D = this.key.pubkey.map(pubkey=>{
-          return utils.bufferlib.b64encode(pubkey)
-        })
         resolve(this)
       }catch(e){
         reject(e) 

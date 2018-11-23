@@ -1,8 +1,10 @@
-FROM alpine 
+FROM arm32v6/node:10.13-alpine
+#FROM arm32v7/node:10.13-stretch
+#FROM node:10.13-alpine  
 MAINTAINER youht
 
 RUN apk add curl --no-cache
-RUN apk add nodejs nodejs-npm --no-cache
+#RUN apk add nodejs nodejs-npm --no-cache
 #ADD node /node
 #ENV $PATH=$PATH:/node/bin
 #RUN source

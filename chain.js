@@ -40,7 +40,7 @@ class UTXO{
                       "index":idx,
                       "txout":new TXout({"amount":txout.amount,
                                      "outAddr":txout.outAddr,
-                                     "pubkey64D":txout.pubkey64D,
+                                     "pubkey":txout.pubkey,
                                      "signNum":txout.signNum,
                                      "script":txout.script})
                       })
@@ -131,7 +131,7 @@ class UTXO{
                     "index":idx,
                     "txout":new TXout({"amount":txout.amount,
                                    "outAddr":txout.outAddr,
-                                   "pubkey64D":txout.pubkey64D,
+                                   "pubkey":txout.pubkey,
                                    "signNum":txout.signNum,
                                    "script":txout.script})
                                  })
@@ -182,7 +182,7 @@ class UTXO{
             "txout":new TXout({
                 "amount" : prevTX.outs[txin.index].amount,
                 "outAddr": prevTX.outs[txin.index].outAddr,
-                "pubkey64D":prevTX.outs[txin.index].pubkey64D,
+                "pubkey":prevTX.outs[txin.index].pubkey,
                 "signNum": prevTX.outs[txin.index].signNum,
                 "script" : prevTX.outs[txin.index].script})
                         })
@@ -221,7 +221,7 @@ class UTXO{
         acc = acc + out["txout"].amount
         unspend[uhash]={"index":out["index"],
                         "amount":out["txout"].amount,
-                        "pubkey64D":out["txout"].pubkey64D,
+                        "pubkey":out["txout"].pubkey,
                         "signNum":out["txout"].signNum}
         if (acc >=amount)
           break
@@ -553,18 +553,20 @@ class Chain{
     console.log("total amount",amount)
     return amount
   }
-  async findContractAssets({contractHash,key=null,inAddr=null}){
+  async findContractAssets({contractHash,key=null,inAddr=null,list=false}){
     const contract = this.findContract(contractHash)
     if (!contract) return {}
-    return this.findAssets({
+    let assets = await this.findAssets({
          key:key,
          from:contract.blockIndex,
          outAddr:contract.contractAddr,
-         inAddr :inAddr
+         inAddr :inAddr,
+         list   :list
       })
+    return assets
   }
-  async findAssets({key=null,from=0,outAddr=null,inAddr=null}){
-    //正序合并所有inAddr(如inAddr则表示不限定)输出给outAddr的assets数据资源
+  async findAssets({key=null,from=0,outAddr=null,inAddr=null,list=false}){
+    //正序合并所有inAddr(如无inAddr则表示不限定)输出给outAddr的assets数据资源
     console.log("...",outAddr,inAddr)
     let account
     if (inAddr){
@@ -580,13 +582,36 @@ class Chain{
           (!inAddr || tx.ins[0].inAddr == inAddr)){
         if (typeof tx.outs[0].assets == "string") { //加密
           if (inAddr){
-            newAssets = JSON.parse(utils.crypto.decrypt(tx.outs[0].assets,account.key.prvkey[0]))
+            try{
+              newAssets = JSON.parse(utils.ecc.deCipher(tx.outs[0].assets,account.key.prvkey[0]))
+            }catch(err){
+              newAssets = {encrypted:[tx.outs[0].assets]}
+            }
           }else{
             newAssets = {encrypted:[tx.outs[0].assets]}
           }
         }else{
           newAssets = tx.outs[0].assets
         }
+
+        if (key){
+          let keys=key.split(".")
+          newAssets = keys.reduce(function(xs, x) {
+            return (xs && xs[x]) ? xs[x] : null;
+          },newAssets);
+        }
+
+        if (!newAssets) return true
+        
+        newAssets={data:newAssets,_timestamp:tx.timestamp}
+
+        
+        if (list){
+          newAssets = {list:[newAssets]}
+        }
+        
+        console.log("****",newAssets)
+
         assets = deepmerge(assets,newAssets,{arrayMerge:
           (target,source,options)=>{
             for (let item of source){
@@ -596,17 +621,12 @@ class Chain{
             return target
           }
         })
+        
         return true
       }
       return false
     })
-    if (key){
-      let keys=key.split(".")
-      assets = keys.reduce(function(xs, x) {
-        return (xs && xs[x]) ? xs[x] : null;
-      },assets);
-    }
-    console.log("total assets",assets)
+    console.log("total assets",Object.keys(assets))
     return assets
   }
   

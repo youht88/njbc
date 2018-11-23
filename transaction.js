@@ -10,13 +10,10 @@ class TXin{
     this.prevHash=args.prevHash||""
     this.index   =args.index
     this.inAddr  =args.inAddr||""
-    if (args.signD){
-      this.signD=args.signD
+    if (args.sign){
+      this.sign=args.sign
     }else{
-      this.signD = []
-      args.sign.map((sign,i)=>{
-        return this.signD[i] = sign
-      })
+      this.sign = []
     }
   }
   canUnlockWith(script){
@@ -33,15 +30,10 @@ class TXout{
     this.amount=args.amount   || 0
     this.outAddr=args.outAddr || ""
     this.signNum = args.signNum || 1
-    if (args.pubkey64D){
-      this.pubkey64D=args.pubkey64D
-    }else if (args.pubkey){
-      this.pubkey64D=[]
-      args.pubkey.map((pubkey,i)=>{
-        return this.pubkey64D[i]=utils.bufferlib.b64encode(pubkey)
-      })
+    if (args.pubkey){
+      this.pubkey = args.pubkey
     }else{
-      this.pubkey64D=[]
+      this.pubkey=[]
     }
     this.contractHash = args.contractHash || ""
     this.script=args.script   || ""
@@ -97,7 +89,7 @@ class Transaction{
       let prevTx = global.blockchain.findTransaction(vin.prevHash)
       if (!prevTx.hash) return true //此方法仅为解决首次批量下载问题，目前尚未知更好的模式，过后修改
       let vout = prevTx.outs[vin.index]
-      let outPubkey = vout.pubkey64D.map(pubkey64D=>{return utils.bufferlib.b64decode(pubkey64D)})
+      let outPubkey = vout.pubkey
       outAddr = vout.outAddr
       if (vout.signNum && vout.signNum>outPubkey.length){
         logger.warn(`需要签名校验的数量${vin.signNum}大于提供的公钥数量`)
@@ -115,9 +107,9 @@ class Transaction{
       let signNum = 0 
       let isVerify=false
       for (let i=0 ;i<outPubkey.length;i++){
-        if (utils.crypto.verify(
+        if (utils.ecc.verify(
               vin.prevHash+vin.index.toString()+vin.inAddr,
-              vin.signD[i],
+              vin.sign[i],
               outPubkey[i])){
           signNum++
           if (signNum >= vout.signNum){
@@ -229,7 +221,7 @@ class Transaction{
         let toSign=rawIn.prevHash+rawIn.index.toString()+rawIn.inAddr
         let sign=[]
         inPrvkey.map((key,i)=>{
-          return sign[i]=utils.crypto.sign(toSign,key)
+          return sign[i]=utils.ecc.sign(toSign,key)
         })
         rawIn.sign = sign
       }

@@ -1,6 +1,6 @@
 //crypto
 const crypto = require("crypto")
-const RSA = require("node-rsa")
+const node_rsa = require("node-rsa")
 const fs = require("fs")
 const path = require("path")
 const log4js = require("log4js");
@@ -43,9 +43,169 @@ class Logger {
 logger=new Logger().getLogger()
 
 class Crypto{
-  genRSAKey(prvfile="private.pem",pubfile="public.pem"){
+  createRSA(){
+    let rsa = new RSA()
+    return rsa
+  }
+  createECC(algorithm){
+    let ecc = new ECC(algorithm)
+    return ecc
+  }
+}
+class ECC{
+  constructor(namedCurve='secp256k1',namedCipher='aes192'){
+    this.namedCurve = namedCurve
+    this.namedCipher = namedCipher
+    this.PEM_PRIVATE_BEGIN = "-----BEGIN EC PRIVATE KEY-----\n"
+    this.PEM_PRIVATE_END="\n-----END EC PRIVATE KEY-----"
+    this.PEM_PUBLIC_BEGIN = "-----BEGIN PUBLIC KEY-----\n"
+    this.PEM_PUBLIC_END="\n-----END PUBLIC KEY-----"
+  }
+  toPEM(key,type){
+    type = type.toUpperCase()
+    if (type=="PUBLIC"){
+      return this.PEM_PUBLIC_BEGIN+key+this.PEM_PUBLIC_END
+    }else if (type =="PRIVATE"){
+      return this.PEM_PRIVATE_BEGIN+key+this.PEM_PRIVATE_END
+    }else {
+      return null
+    }
+  }
+  generateKeys(prvfile="private",pubfile="public"){
     try{
-      const key=new RSA({b: 1024});
+     const key = crypto.generateKeyPairSync("ec",{
+        namedCurve       :this.namedCurve,
+        publicKeyEncoding:{
+          type  :"spki",
+          format:"der"
+        },
+        privateKeyEncoding:{
+          type  :"sec1",
+          format:"der"
+        }
+     })
+     const pubkey = key.publicKey.toString("base64")
+     const prvkey = key.privateKey.toString("base64")
+     if (prvfile){
+       fs.writeFileSync(prvfile,prvkey)
+     }
+     if (pubfile){
+       fs.writeFileSync(pubfile,pubkey)
+     }
+     return {"prvkey":prvkey,"pubkey":pubkey}
+    }catch(e){
+     console.log(`error ${e.name} with ${e.message}`)
+     return null
+    } 
+  }
+  encrypt(message,pubkey=null,pubfile=null){
+    let encrypted=null
+    try{
+      if (pubfile)
+        pubkey = fs.readFileSync(pubfile,"utf8")
+      if (pubkey){
+        const pubkeyPEM = this.toPEM(pubkey,'public')
+        encrypted = crypto.publicEncrypt({key:pubkeyPEM},Buffer.from(message)).toString('base64')
+        return encrypted
+      }else {
+        return null
+      }  
+    }catch(e){
+      console.log(`error ${e.name} with ${e.message}`)
+      return null
+    }
+  }
+  decrypt(encrypted,prvkey=null,prvfile=null){
+    let decrypted=null
+    try{
+      if (prvfile)
+        prvkey = fs.readFileSync(prvfile,"utf8")
+      if (prvkey){
+        const key = new node_rsa(prvkey,'pkcs8-private')
+        if (key.isPrivate()){
+          decrypted = key.decrypt(encrypted, 'utf8');
+        }
+        return decrypted  
+      }else{
+        return null
+      }
+    }catch(e){
+      console.log(`error ${e.name} with ${e.message}`)
+      return null
+    }
+  }
+  sign(message,prvkey=null,prvfile=null){
+    let signature=null
+    try{
+      if (prvfile)
+        prvkey = fs.readFileSync(prvfile,"utf8")
+      if (prvkey){
+        const signObj = crypto.createSign('sha256')
+        signObj.update(message)
+        const prvkeyPEM = this.toPEM(prvkey,"private")
+        const signStr = signObj.sign(prvkeyPEM).toString('base64');
+        return signStr  
+      }else{
+        return null
+      }
+    }catch(e){
+      throw e
+    }
+  }
+  verify(message,signStr,pubkey=null,pubfile=null){
+    let verify=null
+    try{
+      if (pubfile)
+        pubkey = fs.readFileSync(pubfile,"utf8")
+      if (pubkey){
+        const verifyObj = crypto.createVerify('sha256')
+        verifyObj.update(message)
+        const pubkeyPEM = this.toPEM(pubkey,"public")
+        const verifyBool = verifyObj.verify(pubkeyPEM,Buffer.from(signStr,"base64"));
+        return verifyBool  
+      }else{
+        return false
+      }
+    }catch(e){
+      console.log(`error ${e.name} with ${e.message}`)
+      return false
+    }
+  }
+  enCipher(message,key){
+    let encipher = crypto.createCipher(this.namedCipher,key)
+    let encrypted = encipher.update(JSON.stringify(message),"utf8","base64")
+    encrypted += encipher.final('base64') 
+    return encrypted
+  }
+  deCipher(message,key){
+    let decipher = crypto.createDecipher(this.namedCipher,key)
+    let decrypted = decipher.update(message,"base64",'utf8')
+    decrypted += decipher.final('utf8')
+    return decrypted
+  }  
+  genECDH(){
+    const ecdh = crypto.createECDH(this.namedCurve)
+    const pubkey = ecdh.generateKeys("base64")
+    const prvkey = ecdh.getPrivateKey("base64")
+    return {prvkey,pubkey}
+  }  
+  computeSecret(prvkey,pubkey){
+    const ecdh = crypto.createECDH(this.namedCurve)
+    ecdh.setPrivateKey(prvkey,"base64")
+    return ecdh.computeSecret(Buffer.from(pubkey,"base64")).toString("base64")
+  }
+}
+class RSA{
+  constructor(namedCipher='aes192'){
+    this.namedCipher = namedCipher
+    this.PEM_PRIVATE_BEGIN = "-----BEGIN PRIVATE KEY-----\n"
+    this.PEM_PRIVATE_END="\n-----END PRIVATE KEY-----"
+    this.PEM_PUBLIC_BEGIN = "-----BEGIN PUBLIC KEY-----\n"
+    this.PEM_PUBLIC_END="\n-----END PUBLIC KEY-----"
+  }
+  generateKeys(prvfile="private",pubfile="public"){
+    try{
+      const key=new node_rsa({b: 1024});
       const prvkey = key.exportKey("pkcs8-private")
       const pubkey = key.exportKey("pkcs8-public")
       if (prvfile){
@@ -64,15 +224,10 @@ class Crypto{
   encrypt(message,pubkey=null,pubfile=null){
     let encrypted=null
     try{
+      if (pubfile)
+        pubkey = fs.readFileSync(pubfile,"utf8")
       if (pubkey){
-        const key=new RSA(pubkey)
-        if (key.isPublic()){
-          encrypted = key.encrypt(message, 'base64')
-        }
-        return encrypted
-      }else if (pubfile){
-        const pubkey = fs.readFileSync(pubfile,"utf8")
-        const key=new RSA(pubkey,'pkcs8-public')
+        const key=new node_rsa(pubkey,'pkcs8-public')
         if (key.isPublic()){
           encrypted = key.encrypt(message, 'base64')
         }
@@ -88,15 +243,10 @@ class Crypto{
   decrypt(encrypted,prvkey=null,prvfile=null){
     let decrypted=null
     try{
+      if (prvfile)
+        prvkey = fs.readFileSync(prvfile,"utf8")
       if (prvkey){
-        const key = new RSA(prvkey)
-        if (key.isPrivate()){
-          decrypted = key.decrypt(encrypted, 'utf8');
-        }
-        return decrypted  
-      }else if (prvfile){
-        const prvkey = fs.readFileSync(prvfile,"utf8")
-        const key = new RSA(prvkey,'pkcs8-private')
+        const key = new node_rsa(prvkey,'pkcs8-private')
         if (key.isPrivate()){
           decrypted = key.decrypt(encrypted, 'utf8');
         }
@@ -112,15 +262,10 @@ class Crypto{
   sign(message,prvkey=null,prvfile=null){
     let signature=null
     try{
+      if (prvfile)
+        prvkey = fs.readFileSync(prvfile,"utf8")
       if (prvkey){
-        const key = new RSA(prvkey)
-        if (key.isPrivate()){
-          signature = key.sign(message,"base64");
-        }
-        return signature  
-      }else if (prvfile){
-        const prvkey = fs.readFileSync(prvfile,"utf8")
-        const key = new RSA(prvkey)
+        const key = new node_rsa(prvkey)
         if (key.isPrivate()){
           signature = key.sign(message,"base64");
         }
@@ -136,15 +281,10 @@ class Crypto{
   verify(message,signature,pubkey=null,pubfile=null){
     let verify=null
     try{
+      if (pubfile)
+        pubkey = fs.readFileSync(pubfile,"utf8")
       if (pubkey){
-        const key = new RSA(pubkey)
-        if (key.isPublic()){
-          verify = key.verify(message,signature,"utf8","base64");
-        }
-        return verify  
-      }else if (pubfile){
-        const pubkey = fs.readFileSync(pubfile,"utf8")
-        const key = new RSA(pubkey)
+        const key = new node_rsa(pubkey)
         if (key.isPublic()){
           verify = key.verify(message,signature,"utf8","base64");
         }
@@ -156,6 +296,18 @@ class Crypto{
       console.log(`error ${e.name} with ${e.message}`)
       return null
     }
+  }  
+  enCipher(message,key){
+    let encipher = crypto.createCipher(this.namedCipher,key)
+    let encrypted = encipher.update(JSON.stringify(message),"utf8","base64")
+    encrypted += encipher.final('base64') 
+    return encrypted
+  }
+  deCipher(message,key){
+    let decipher = crypto.createDecipher(this.namedCipher,key)
+    let decrypted = decipher.update(message,"base64",'utf8')
+    decrypted += decipher.final('utf8')
+    return decrypted
   }  
 }
     
@@ -172,6 +324,12 @@ class Hashlib{
     hash.update(str)
     return hash.digest("hex")
   }
+  ripemd160(...data){
+    const hash = crypto.createHash("ripemd160")
+    const str = data.map(i=>JSON.stringify(i)).join("")
+    hash.update(str)
+    return hash.digest("hex")
+  }
 }
 class Bufferlib{
   constructor(){
@@ -179,17 +337,17 @@ class Bufferlib{
   }
   b64encode(str){
     //对字符串进行base64编码
-    return new Buffer(str).toString('base64')
+    return Buffer.from(str).toString('base64')
   }
   b64decode(str){
     //对base64编码的字符串进行解码
-    return new Buffer(str,'base64').toString()
+    return Buffer.from(str,'base64').toString()
   }
   toBin(str,codeType='utf8'){
     //将特定编码类型的字符串压缩为bin码
     if (this.codeTypes.includes(codeType)){
       if (typeof str !== "string") str = JSON.stringify(str)
-      return new Buffer(str,codeType)
+      return Buffer.from(str,codeType)
     }else{
       throw new Error(`code type must be one of ${this.codeTypes}`)
     }
@@ -207,7 +365,7 @@ class Bufferlib{
     if (!this.codeTypes.includes(fromCode) || !this.codeTypes.includes(toCode) )
       throw new Error(`code type must be one of ${this.codeTypes}`)
     if (typeof str !== "string") str = JSON.stringify(str)
-    return (new Buffer(str,fromCode)).toString(toCode)
+    return (Buffer.from(str,fromCode)).toString(toCode)
   }
 }
 class Set{
@@ -531,7 +689,8 @@ exports.obj2json = function(obj){
   return JSON.parse(JSON.stringify(obj))
 }
 
-exports.crypto  = new Crypto()
+exports.ecc  = new Crypto().createECC()  
+exports.rsa  = new Crypto().createRSA() 
 exports.hashlib = new Hashlib()
 exports.bufferlib  = new Bufferlib()
 exports.logger  = new Logger()
