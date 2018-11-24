@@ -117,7 +117,7 @@ export default class Block extends React.Component{
           <p><strong>txCount:</strong>{block.data.length}</p>
           <p><strong>merkleRoot:</strong>{block.merkleRoot}</p>
           <Meta
-            avatar={<Avatar style={{backgroundColor: '#'+block.data[0].outs[0].outAddr.substr(0,6)}}>
+            avatar={<Avatar style={{backgroundColor: '#'+Buffer.from(block.data[0].outs[0].outAddr,"base64").toString("hex").substr(0,6)}}>
               {block.data[0].outs[0].outAddr.substr(0,4)+'...'}
               </Avatar>}
           />

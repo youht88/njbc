@@ -102,7 +102,7 @@
         title: '地址',
         dataIndex: 'outAddr',
         key: 'outAddr',
-        render: text => <Link to={`/wallet/${text}`}><Tag color={'#'+text.substr(0,6)}>{text.substr(0,6)+'...'}</Tag></Link>,
+        render: text => <Link to={`/wallet/${text}`}><Tag color={'#'+Buffer.from(text,"base64").toString("hex").substr(0,6)}>{text.substr(0,6)+'...'}</Tag></Link>,
       },{
         title: '金额',
         dataIndex: 'amount',

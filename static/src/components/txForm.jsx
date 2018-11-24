@@ -103,7 +103,7 @@ export default class TxForm extends React.Component{
       title: 'outAddr',
       dataIndex: 'outAddr',
       key: 'outAddr',
-      render: text => <Link to={`/wallet/${text}`}><Tag color={'#'+text.substr(0,6)}>{text.substr(0,6)+'...'}</Tag></Link>,
+      render: text => <Link to={`/wallet/${text}`}><Tag color={'#'+Buffer.from(text,"base64").toString("hex").substr(0,6)}>{text.substr(0,6)+'...'}</Tag></Link>,
     }, {
       title: 'amount',
       dataIndex: 'amount',

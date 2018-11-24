@@ -46,4 +46,6 @@ RUN npm install react-bootstrap --save
 RUN npm install node-dev -g 
 RUN npm install vm2 --save-dev
 RUN npm install deepmerge --save
+RUN npm install base-x --save
+
 WORKDIR /njbc

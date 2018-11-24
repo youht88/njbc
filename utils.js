@@ -3,7 +3,8 @@ const crypto = require("crypto")
 const node_rsa = require("node-rsa")
 const fs = require("fs")
 const path = require("path")
-const log4js = require("log4js");
+const log4js = require("log4js")
+const b58 = require('base-x')('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz')
 
 const MongoClient = require("mongodb")
 
@@ -333,7 +334,7 @@ class Hashlib{
 }
 class Bufferlib{
   constructor(){
-    this.codeTypes = ['ascii','base64','utf8','hex','binary']
+    this.codeTypes = ['ascii','base64','utf8','hex','binary','base58']
   }
   b64encode(str){
     //对字符串进行base64编码
@@ -343,11 +344,24 @@ class Bufferlib{
     //对base64编码的字符串进行解码
     return Buffer.from(str,'base64').toString()
   }
+  b58encode(str){
+    return b58.encode(Buffer.from(str))
+  }
+  b58decode(str){
+    return b58.decode(str).toString()
+  }
   toBin(str,codeType='utf8'){
+    logger.warn("utils.bufferlib.toBin",str,codeType)
     //将特定编码类型的字符串压缩为bin码
     if (this.codeTypes.includes(codeType)){
-      if (typeof str !== "string") str = JSON.stringify(str)
-      return Buffer.from(str,codeType)
+      if (typeof str !== "string"){ 
+        str = JSON.stringify(str)
+        return Buffer.from(str,codeType)
+      }else if (codeType == "base58"){
+        return b58.decode(str)
+      }else{
+        return Buffer.from(str,codeType)
+      }
     }else{
       throw new Error(`code type must be one of ${this.codeTypes}`)
     }
@@ -356,7 +370,11 @@ class Bufferlib{
     //将压缩的bin码转换为对应类型的string
     if (!Buffer.isBuffer(buffer)) throw new Error("first arg type must be buffer")
     if (this.codeTypes.includes(codeType)){
-      return buffer.toString(codeType)
+      if (codeType == "base58"){
+        return b58.encode(buffer)
+      }else{
+        return buffer.toString(codeType)
+      }
     }else{
       throw new Error(`code type must be one of ${this.codeTypes}`)
     }
@@ -364,8 +382,14 @@ class Bufferlib{
   transfer(str,fromCode,toCode){
     if (!this.codeTypes.includes(fromCode) || !this.codeTypes.includes(toCode) )
       throw new Error(`code type must be one of ${this.codeTypes}`)
-    if (typeof str !== "string") str = JSON.stringify(str)
-    return (Buffer.from(str,fromCode)).toString(toCode)
+    if (typeof str !== "string") {
+       str = JSON.stringify(str)
+       return this.toString(Buffer.from(str,'utf8'),toCode)
+    }else if (fromCode=="base58"){
+      return this.toString(b58.decode(str),toCode)
+    }else{
+      return this.toString(Buffer.from(str,fromCode),toCode)
+    }
   }
 }
 class Set{

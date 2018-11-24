@@ -162,12 +162,12 @@ class Node{
       
       
       //sync blockchain
-      /*logger.warn("start1","this.syncOverallChain")
+      logger.warn("start1","this.syncOverallChain")
       await this.syncOverallChain(this.config.full).then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())
       })
       logger.warn("start2","resetUTXO")      
-      */
+      
       
       //sync utxo
       this.resetUTXO()

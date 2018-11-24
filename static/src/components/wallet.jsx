@@ -147,7 +147,7 @@ class UtxoTable extends React.Component{
       title: 'outAddr',
       dataIndex: 'outAddr',
       key: 'outAddr',
-      render: text => <a href="javascript:;"><Tag color={'#'+text.substr(0,6)}>{text.substr(0,6)+'...'}</Tag></a>,
+      render: text => <a href="javascript:;"><Tag color={'#'+Buffer.from(text,"base64").toString("hex").substr(0,6)}>{text.substr(0,6)+'...'}</Tag></a>,
     },{
       title: 'amount',
       dataIndex: 'amount',

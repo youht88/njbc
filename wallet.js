@@ -16,13 +16,25 @@ class Wallet{
       })()
   }
   static  isAddress(nameOrAddress){
-    if (nameOrAddress.length==64) return true
-    return false
+    let r,s1,s2,s3,s4,t
+    try{
+      t=utils.bufferlib.toBin(nameOrAddress,"base58")
+      if (t.length!=25 || t[0]!=0) return false
+      r = t.slice(0,21).toString('hex')
+      s1 = utils.hashlib.sha256(r)
+      s2 = utils.hashlib.sha256(s1)
+      s3 = s2.slice(0,8)
+      s4 = t.slice(21,25).toString('hex')
+      if (s3 != s4) return false
+      return true
+    }catch(e){
+      console.log("error",e.message)
+      return false
+    }
   }
 
   isAddress(nameOrAddress){
-    if (nameOrAddress.length==64) return true
-    return false
+    return Wallet.isAddress(nameOrAddress)
   }
   async chooseByName(name){
     return new Promise((resolve,reject)=>{
@@ -85,10 +97,18 @@ class Wallet{
    })
   }
   static address(pubkey){
+    let p,q,r,s1,s2,s3,t
     if (Array.isArray(pubkey))
-      return utils.hashlib.sha256(pubkey.join(""))
+      p = pubkey.join("")
     else
-      return utils.hashlib.sha256(pubkey)
+      p = pubkey
+    q=utils.hashlib.sha256(p)
+    r='00'+utils.hashlib.ripemd160(q)
+    s1=utils.hashlib.sha256(r)
+    s2=utils.hashlib.sha256(s1)
+    s3=s2.slice(0,8)
+    t=r+s3
+    return utils.bufferlib.transfer(t,"hex","base58")
   }
   static async getAll(){
     return await global.db.findMany("wallet",{},{"projection":{"_id":0,"name":1,"address":1}})  

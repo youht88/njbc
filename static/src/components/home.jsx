@@ -6,6 +6,7 @@ import moment from 'moment';
 import TxForm from './txForm.jsx';
 import MyEcharts from './echarts.jsx';
 
+
 const FormItem = Form.Item;
 const Search = Input.Search;
 const {TextArea} = Input
@@ -58,7 +59,7 @@ class BlockList extends React.Component{
       title: '矿工',
       dataIndex: 'miner',
       key: 'miner',
-      render: text => <Link to={`/wallet/${text}`}><Tag color={'#'+text.substr(0,6)}>{text.substr(0,6)+'...'}</Tag></Link>,
+      render: text => <Link to={`/wallet/${text}`}><Tag color={'#'+new Buffer(text,"base64").toString("hex").substr(0,6)}>{text.substr(0,6)+'...'}</Tag></Link>,
     },{
       title: <Icon type="clock-circle" style={{ fontSize: 16, color: '#08c' }} />,
       dataIndex: 'timestamp',

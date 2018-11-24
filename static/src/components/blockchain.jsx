@@ -141,7 +141,7 @@ export default class Blockchain extends React.Component{
           <p><strong>txCount:</strong>{block.data.length}</p>
           <p><strong>merkleRoot:</strong>{block.merkleRoot.substr(0,6)}...</p>
           <Meta
-            avatar={<Avatar style={{backgroundColor: '#'+block.data[0].outs[0].outAddr.substr(0,6)}}>
+            avatar={<Avatar style={{backgroundColor: '#'+Buffer.from(block.data[0].outs[0].outAddr,"base64").toString("hex").substr(0,6)}}>
               <Link to={`/wallet/${block.data[0].outs[0].outAddr}`}>
               {block.data[0].outs[0].outAddr.substr(0,4)}...
               </Link>
