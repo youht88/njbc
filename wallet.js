@@ -16,19 +16,17 @@ class Wallet{
       })()
   }
   static  isAddress(nameOrAddress){
-    let r,s1,s2,s3,s4,t
+    let p,q,r,s,t
     try{
       t=utils.bufferlib.toBin(nameOrAddress,"base58")
-      if (t.length!=25 || t[0]!=0) return false
-      r = t.slice(0,21).toString('hex')
-      s1 = utils.hashlib.sha256(r)
-      s2 = utils.hashlib.sha256(s1)
-      s3 = s2.slice(0,8)
-      s4 = t.slice(21,25).toString('hex')
-      if (s3 != s4) return false
+      if (t.length!=25 || (t[0]!=0 && t[0]!=5)) return false
+      r = t.slice(1,21).toString('hex')
+      s = utils.hashlib.doubleSha256(r)
+      p = s.slice(0,8)
+      q = t.slice(21,25).toString('hex')
+      if (p != q) return false
       return true
     }catch(e){
-      console.log("error",e.message)
       return false
     }
   }
@@ -97,18 +95,19 @@ class Wallet{
    })
   }
   static address(pubkey){
-    let p,q,r,s1,s2,s3,t
-    if (Array.isArray(pubkey))
-      p = pubkey.join("")
-    else
-      p = pubkey
-    q=utils.hashlib.sha256(p)
-    r='00'+utils.hashlib.ripemd160(q)
-    s1=utils.hashlib.sha256(r)
-    s2=utils.hashlib.sha256(s1)
-    s3=s2.slice(0,8)
-    t=r+s3
-    return utils.bufferlib.transfer(t,"hex","base58")
+    let version,publickey,hash160,doublesha256,checksum,address
+    if (Array.isArray(pubkey)){
+      publickey = pubkey.join("")
+      version = (pubkey.length>1)?'05':'00'  //多个pubkey则为合成地址
+    }else{
+      publickey = pubkey
+      version='00'  //普通地址
+    }
+    hash160=utils.hashlib.hash160(publickey)
+    doublesha256=utils.hashlib.doubleSha256(hash160)
+    checksum=doublesha256.slice(0,8)
+    address=version+hash160+checksum
+    return utils.bufferlib.transfer(address,"hex","base58")
   }
   static async getAll(){
     return await global.db.findMany("wallet",{},{"projection":{"_id":0,"name":1,"address":1}})  

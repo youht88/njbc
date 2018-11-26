@@ -40,9 +40,10 @@ class UTXO{
                       "index":idx,
                       "txout":new TXout({"amount":txout.amount,
                                      "outAddr":txout.outAddr,
-                                     "pubkey":txout.pubkey,
                                      "signNum":txout.signNum,
-                                     "script":txout.script})
+                                     "script":txout.script,
+                                     "aliveTimestamp":txout.aliveTimestamp
+                                     })
                       })
           }
         }
@@ -95,7 +96,7 @@ class UTXO{
             //check out canbeUnlock?
             try{
               if (!out["txout"].canbeUnlockWith(txin.inAddr)){
-                logger.critical("0.script locked",`txin:${txin.prevHash}-${txin.index}`,txin.inAddr,out["txout"].outAddr)
+                logger.error("0.script locked",`txin:${txin.prevHash}-${txin.index}`,txin.inAddr,out["txout"].outAddr)
                 return false
               }
             }catch(e){
@@ -131,10 +132,11 @@ class UTXO{
                     "index":idx,
                     "txout":new TXout({"amount":txout.amount,
                                    "outAddr":txout.outAddr,
-                                   "pubkey":txout.pubkey,
                                    "signNum":txout.signNum,
-                                   "script":txout.script})
-                                 })
+                                   "script":txout.script,
+                                   "aliveTimestamp":txout.aliveTimestamp
+                                   })
+                        })
     }
     if (unspendOutputs.length!=0){
       utxoSet[TX.hash]=unspendOutputs
@@ -182,10 +184,11 @@ class UTXO{
             "txout":new TXout({
                 "amount" : prevTX.outs[txin.index].amount,
                 "outAddr": prevTX.outs[txin.index].outAddr,
-                "pubkey":prevTX.outs[txin.index].pubkey,
                 "signNum": prevTX.outs[txin.index].signNum,
-                "script" : prevTX.outs[txin.index].script})
-                        })
+                "script" : prevTX.outs[txin.index].script,
+                "aliveTimestamp":prevTX.outs[txin.index].aliveTimestamp
+                })
+            })
         utxoSet[txin.prevHash] = outs
       }
     }
@@ -221,7 +224,6 @@ class UTXO{
         acc = acc + out["txout"].amount
         unspend[uhash]={"index":out["index"],
                         "amount":out["txout"].amount,
-                        "pubkey":out["txout"].pubkey,
                         "signNum":out["txout"].signNum}
         if (acc >=amount)
           break
@@ -485,43 +487,6 @@ class Chain{
       block = this.findBlockByIndex(bindex)   
     }
     return null   
-  }
-  async findContractBalanceTo1(blockIndex,from,to){
-     return new Promise(async (resolve,reject)=>{
-       try{
-         let wFrom,wTo,fromAddr,toAddr
-         if (!Wallet.isAddress(from)){
-           wFrom = await new Wallet(from)
-           fromAddr = wFrom.address
-         }else{
-           fromAddr = from
-         }
-         if (!Wallet.isAddress(to)){
-           wTo = await new Wallet(to)
-           toAddr = wTo.address
-         }else{
-           toAddr = to
-         }
-        let block=this.blocks[blockIndex]
-        let bindex=block.index
-        let amount = 0
-        while (bindex <= this.maxindex()){
-          const TXs = block.data
-          for (let tx of TXs){
-            if (tx.isCoinbase()) continue
-            if (tx.ins[0].inAddr == fromAddr && tx.outs[0].outAddr == toAddr){
-              amount += tx.outs[0].amount
-            }
-          }
-          bindex = bindex +1
-          block = this.findBlockByIndex(bindex)   
-        }
-        console.log("total amount",amount)
-        resolve(amount)
-      }catch(error){
-        reject(error)
-      }
-    })
   }
   async findBalanceFromContract({contractHash,outAddr}){
     const contract = this.findContract(contractHash)

@@ -36,7 +36,6 @@ RUN npm install jquery underscore moment --save
 RUN npm install socket.io socket.io-client --save
 RUN npm install express body-parse --save 
 RUN npm install mongodb --save
-RUN npm install node-rsa --save
 RUN npm install log4js --save
 RUN npm install commander --save
 RUN npm install cheerio async --save

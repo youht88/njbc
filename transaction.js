@@ -10,19 +10,48 @@ class TXin{
     this.prevHash=args.prevHash||""
     this.index   =args.index
     this.inAddr  =args.inAddr||""
-    if (args.sign){
-      this.sign=args.sign
-    }else{
-      this.sign = []
-    }
+    this.pubkey  =args.pubkey||[]
+    this.sign    =args.sign  ||[]
   }
-  canUnlockWith(script){
-    //暂停使用，移入canBeUnlockWith函数
-    return true
-    if (this.pubkey64D != script){
-      logger.fatal("canUnlockWith error:self.pubkey64D != script")
+  canUnlockWith(){
+    let prevTx = global.blockchain.findTransaction(this.prevHash)
+    if (!prevTx.hash) return true //此方法仅为解决首次批量下载问题，目前尚未知更好的模式，过后修改
+      
+    let vout = prevTx.outs[this.index]
+    let outAddr = vout.outAddr
+    
+    if (vout.aliveTimestamp >0 && new Date().getTime() < vout.aliveTimestamp) return false
+    
+    if (vout.signNum && vout.signNum>this.pubkey.length){
+      logger.warn(`需要签名校验的数量${vout.signNum}大于提供的公钥数量`)
+      return false
     }
-    //return self.pubkey64D == script
+    //step1:verify it is mine 
+    if (!(outAddr == this.inAddr && Wallet.address(this.pubkey)== outAddr)){
+      logger.error("transaction",this.prevHash,this.index,"step1: inAddr can pass pubkey? false")
+      return false
+    }
+    //step2:verify not to be changed!!!!
+    let signNum = 0 
+    let isVerify=false
+    for (let i=0 ;i<this.pubkey.length;i++){
+      if (utils.ecc.verify(
+            this.prevHash+this.index.toString()+this.inAddr,
+            this.sign[i],
+            this.pubkey[i])){
+        signNum++
+        if (signNum >= vout.signNum){
+          isVerify=true
+          logger.info(`[已验证了${vout.signNum}条签名]`)
+          break
+        }
+      }
+    }
+    if (!isVerify){
+      logger.error("transaction",this.prevHash,this.index,"step2: can pass sign verify? false")
+      return false
+    }
+    return true
   }
 }
 class TXout{
@@ -30,20 +59,22 @@ class TXout{
     this.amount=args.amount   || 0
     this.outAddr=args.outAddr || ""
     this.signNum = args.signNum || 1
-    if (args.pubkey){
-      this.pubkey = args.pubkey
-    }else{
-      this.pubkey=[]
-    }
     this.contractHash = args.contractHash || ""
     this.script=args.script   || ""
     this.assets=args.assets   || {}
+    this.aliveTimestamp = args.aliveTimestamp || 0
     if (this.script && !this.contractHash)
-      this.contractHash = utils.hashlib.sha256(this.script)
+      this.contractHash = utils.hashlib.hash160(this.script)
   }
   canbeUnlockWith(address){
-    if (this.outAddr == address) return true
-    return false    
+    if (this.outAddr != address) {
+      return false
+    }
+    if (this.aliveTimestamp>0 && new Date().getTime()<this.aliveTimestamp) {
+      logger.warn("timestamp",new Date().getTime(),this.aliveTimestamp)
+      return false
+    }
+    return true
   }
 }
 class Transaction{
@@ -82,63 +113,20 @@ class Transaction{
       logger.warn("交易内容与hash不一致")
       return false
     }
-    let outAddr=""
     for (let idx=0;idx<this.ins.length;idx++){
       let vin = this.ins[idx]
-      
-      let prevTx = global.blockchain.findTransaction(vin.prevHash)
-      if (!prevTx.hash) return true //此方法仅为解决首次批量下载问题，目前尚未知更好的模式，过后修改
-      let vout = prevTx.outs[vin.index]
-      let outPubkey = vout.pubkey
-      outAddr = vout.outAddr
-      if (vout.signNum && vout.signNum>outPubkey.length){
-        logger.warn(`需要签名校验的数量${vin.signNum}大于提供的公钥数量`)
-        return false
-      }
-              
-      //step1:verify it is mine 
-      if (!(outAddr == vin.inAddr && Wallet.address(outPubkey)== outAddr)){
-        logger.fatal("transaction",outPubkey,Wallet.address(outPubkey),vin.inAddr)
-        logger.error("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? false")
-        return false
-      }
-      //logger.debug("transaction",vin.prevHash,vin.index,"step1: inAddr can pass pubkey? ok")
-      //step2:verify not to be changed!!!!
-      let signNum = 0 
-      let isVerify=false
-      for (let i=0 ;i<outPubkey.length;i++){
-        if (utils.ecc.verify(
-              vin.prevHash+vin.index.toString()+vin.inAddr,
-              vin.sign[i],
-              outPubkey[i])){
-          signNum++
-          if (signNum >= vout.signNum){
-            isVerify=true
-            logger.info(`[已验证了${vout.signNum}条签名]`)
-            break
-          }
-        }
-      }
-      if (!isVerify){
-        logger.error("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? false")
-        return false
-      }
-      //logger.debug("transaction",vin.prevHash,vin.index,"step2: can pass sign verify? ok")
+      if (!vin.canUnlockWith({})) return false
     }
     return true
   }
-  static newCoinbase(outPubkey,outAddr){
+  static newCoinbase(outAddr){
     let ins=[new TXin({"prevHash":"",
                        "index":-1,
-                       "inAddr":"",
-                       "sign":[]
+                       "inAddr":""
                        })]
     let outs=[new TXout({"amount":parseFloat(global.REWARD.toPrecision(12)),
-                         "outAddr":outAddr,
-                         "pubkey":outPubkey,
-                         "signNum":1,
-                         "script":"",
-                         "assets":{}})]
+                         "outAddr":outAddr
+                        })]
     return new Transaction({ins,outs})
   }
   static parseTransaction(data){
@@ -154,26 +142,24 @@ class Transaction{
     let timestamp=data["timestamp"]
     return new Transaction({hash,timestamp,ins,outs})
   }
-  static async newTransaction({inPrvkey,inPubkey,inAddr,outPubkey,outAddr,amount,utxo,script="",assets={},signNum=1}){
+  static async newTransaction({inPrvkey,inPubkey,inAddr,outAddr,amount,utxo,script="",assets={},signNum=1,aliveTimestamp=0}){
     if (!Array.isArray(inPrvkey)) inPrvkey = [inPrvkey]
-    if (!Array.isArray(outPubkey)) outPubkey = [outPubkey]
     return new Promise((resolve,reject)=>{
       let preNewTx = Transaction.preNewTransaction({
-          inAddr,inPubkey,outPubkey,outAddr,amount,utxo,script,assets,signNum})
-      Transaction.sign(inPrvkey,preNewTx)
+          inAddr,outAddr,amount,utxo,script,assets,signNum,aliveTimestamp})
+      preNewTx = Transaction.sign(inPrvkey,inPubkey,preNewTx)
       Transaction.newRawTransaction(preNewTx,utxo)
         .then(result=>resolve(result))
         .catch(error=>reject(error))
     })
   }
-  static preNewTransaction({inAddr,inPubkey,outPubkey,outAddr,amount,utxo,script="",assets={},signNum}){
+  static preNewTransaction({inAddr,outAddr,amount,utxo,script="",assets={},signNum,aliveTimestamp}){
     if (amount<0) throw new Error("金额不能小于零")
     let ins=[]
     let outs=[]
-    logger.warn("!!!!",outPubkey,Wallet.address(outPubkey),outAddr)
     if (!outAddr)
-      outAddr = Wallet.address(outPubkey)
-    amount = parseFloat(amount)
+      throw new Error("must define out address")
+    amount = parseFloat(amount.toPrecision(12))
     let todo = utxo.findSpendableOutputs(inAddr,amount)
     //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3","signNum":1},        
     //                         "2543543543":{"index":0,"amount":"2","signNum":2}
@@ -198,24 +184,25 @@ class Transaction{
     }
     outs.push({"amount":amount,
                "outAddr":outAddr,
-               "pubkey":outPubkey,
                "signNum":signNum,
                "script":script,
-               "assets":assets})
+               "assets":assets,
+               "aliveTimestamp":aliveTimestamp})
     if (todo["acc"] > amount){
       outs.push({"amount":parseFloat((todo["acc"]-amount).toPrecision(12)),
                  "outAddr":inAddr,
-                 "pubkey":inPubkey,
                  "signNum":maxSignNum,  //????
                  "script":"",
-                 "assets":{}})
+                 "assets":{},
+                 "aliveTimestamp":aliveTimestamp
+                 })
     }
     return {rawIns:ins,rawOuts:outs}
   }
   
-  static sign(inPrvkey,preNewTx){
+  static sign(inPrvkey,inPubkey,preNewTx){
     try{
-      if (preNewTx.rawIns[0].index==-1) return
+      if (preNewTx.rawIns[0].index==-1) return preNewTx
       const rawIns=preNewTx.rawIns
       for (let rawIn of rawIns){
         let toSign=rawIn.prevHash+rawIn.index.toString()+rawIn.inAddr
@@ -224,6 +211,7 @@ class Transaction{
           return sign[i]=utils.ecc.sign(toSign,key)
         })
         rawIn.sign = sign
+        rawIn.pubkey = inPubkey
       }
     }catch(error){
       throw error

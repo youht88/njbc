@@ -506,7 +506,9 @@ app.post('/trade',function(req,res,next){
   const nameFrom = req.body.inAddr
   const nameTo   = req.body.outAddr
   const amount   = parseFloat(req.body.amount)
-  node.tradeTest(nameFrom,nameTo,amount,script,assets)
+  const aliveTimestamp = parseInt(req.body.aliveTimestamp)
+
+  node.tradeTest({nameFrom,nameTo,amount,script,assets,aliveTimestamp})
     .then(data=>{
         //res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
         res.json({errCode:0,errText:'',result:data})
@@ -516,17 +518,18 @@ app.post('/trade',function(req,res,next){
       })
 })
 
-app.get('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
+app.get('/trade/:nameFrom/:nameTo/:amount/:aliveTimestamp',function(req,res,next){
   const nameFrom = req.params.nameFrom
   const nameTo   = req.params.nameTo
   const amount   = parseFloat(req.params.amount)
-  node.tradeTest(nameFrom,nameTo,amount)
+  const aliveTimestamp = parseInt(req.params.aliveTimestamp)
+  node.tradeTest({nameFrom,nameTo,amount,aliveTimestamp})
     .then(data=>{
         res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
       })
     .catch(error=>{
       console.log(error.stack)
-      res.end(error.message)
+      res.end(error.stack)
       })
 })
 
@@ -605,7 +608,7 @@ app.get('/getEntryNode/entryNodes',function(req,res){
 })
 
 app.get('/mine',function(req,res){
-  const t1=Transaction.newCoinbase(node.wallet.key.pubkey,node.wallet.address)
+  const t1=Transaction.newCoinbase(node.wallet.address)
   const coinbase=JSON.parse(JSON.stringify(t1))
   //mine
   node.mine(coinbase,(err,newBlock)=>{

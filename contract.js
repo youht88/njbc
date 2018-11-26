@@ -42,19 +42,19 @@ class Contract{
     this.owner        = contractDict.owner
     return true      
   }
-  deploy(owner,amount,assets={}){
+  deploy(owner,amount,assets={},aliveTimestamp=0){
     if (!this.check()) return
     let script = this.script   
-    global.emitter.emit("deployContract",{owner,amount,script,assets})  
+    global.emitter.emit("deployContract",{owner,amount,script,assets,aliveTimestamp})  
   }
   check(){
     if (!this.script && !this.contractHash) throw new Error("空的合约脚本")
     if (this.script){
       if (this.contractHash) {
-        if (utils.hashlib.sha256(this.script) != this.contractHash) 
+        if (utils.hashlib.hash160(this.script) != this.contractHash) 
           throw new Error("合约与合约摘要不匹配")
       }else{
-        this.contractHash = utils.hashlib.sha256(this.script)
+        this.contractHash = utils.hashlib.hash160(this.script)
       }
       this.version      = Contract.getVersion(this.script)
       //检查合约语法
@@ -258,13 +258,14 @@ class Contract{
           logger.warn(`the amount is ${amount}`)
           return amount
         }
-        async payTo(to,amount,assets={}){
+        async payTo(to,amount,assets={},aliveTimestamp=0){
           return new Promise((resolve,reject)=>{
             global.emitter.emit("payTo",{
               contractAddr:this.contractAddr,
               to          :to,
               amount      :amount,
-              assets      :assets
+              assets      :assets,
+              aliveTimestamp : aliveTimestamp
             },(err,result)=>{
               if (err) reject(err)
               resolve(result)
@@ -281,7 +282,7 @@ class Contract{
           if (global.node)
             return Transaction.newRawTransaction(raw,global.node.tradeUTXO)
         }
-        async __set(assets={},caller=null,amount=0,encrypt=false){
+        async __set(assets={},caller=null,amount=0,encrypt=false,aliveTimestamp=0){
           return new Promise(async (resolve,reject)=>{
             if (that.caller && !caller) caller = that.caller
             if (!caller)  return reject(new Error("必须指定caller地址"))
@@ -294,6 +295,7 @@ class Contract{
                 contractAddr:this.contractAddr,
                 amount      :amount,
                 assets      :assets,
+                aliveTimestamp : aliveTimestamp
               },(err,result)=>{
                 if (err) return reject(err)
                 resolve(result)

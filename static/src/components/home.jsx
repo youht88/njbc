@@ -46,7 +46,7 @@ class BlockList extends React.Component{
       title: 'Hash',
       dataIndex: 'hash',
       key: 'hash',
-      render: text => <Link to={`/block/${text}`}>{text.substr(0,6)+'...'}</Link>,
+      render: text => <Link to={`/block/${text}`}>{text.substr(0,12)+'...'}</Link>,
     },{
       title: '交易数',
       dataIndex: 'txCnt',
@@ -64,7 +64,7 @@ class BlockList extends React.Component{
       title: <Icon type="clock-circle" style={{ fontSize: 16, color: '#08c' }} />,
       dataIndex: 'timestamp',
       key: 'timestamp',
-      render: text => <Tag color="#2a4">{moment(text,"x").fromNow()}</Tag>,
+      render: text => <Tag color="#2a4">{moment(text,"x").fromNow()}-{text}</Tag>,
     }];
     this.state={columns}
   }
