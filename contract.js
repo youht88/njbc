@@ -42,10 +42,10 @@ class Contract{
     this.owner        = contractDict.owner
     return true      
   }
-  deploy(owner,amount,assets={},aliveTimestamp=0){
+  deploy(owner,amount,assets={},lockTime=0){
     if (!this.check()) return
     let script = this.script   
-    global.emitter.emit("deployContract",{owner,amount,script,assets,aliveTimestamp})  
+    global.emitter.emit("deployContract",{owner,amount,script,assets,lockTime})  
   }
   check(){
     if (!this.script && !this.contractHash) throw new Error("空的合约脚本")
@@ -258,14 +258,14 @@ class Contract{
           logger.warn(`the amount is ${amount}`)
           return amount
         }
-        async payTo(to,amount,assets={},aliveTimestamp=0){
+        async payTo(to,amount,assets={},lockTime=0){
           return new Promise((resolve,reject)=>{
             global.emitter.emit("payTo",{
               contractAddr:this.contractAddr,
               to          :to,
               amount      :amount,
               assets      :assets,
-              aliveTimestamp : aliveTimestamp
+              lockTime : lockTime
             },(err,result)=>{
               if (err) reject(err)
               resolve(result)
@@ -282,7 +282,7 @@ class Contract{
           if (global.node)
             return Transaction.newRawTransaction(raw,global.node.tradeUTXO)
         }
-        async __set(assets={},caller=null,amount=0,encrypt=false,aliveTimestamp=0){
+        async set(assets={},caller=null,amount=0,encrypt=false,lockTime=0){
           return new Promise(async (resolve,reject)=>{
             if (that.caller && !caller) caller = that.caller
             if (!caller)  return reject(new Error("必须指定caller地址"))
@@ -295,7 +295,7 @@ class Contract{
                 contractAddr:this.contractAddr,
                 amount      :amount,
                 assets      :assets,
-                aliveTimestamp : aliveTimestamp
+                lockTime : lockTime
               },(err,result)=>{
                 if (err) return reject(err)
                 resolve(result)
@@ -303,7 +303,7 @@ class Contract{
             })
           })
         }
-        async __get(key=null,inAddr=null,list=false){
+        async get(key=null,inAddr=null,list=false){
           return new Promise(async (resolve,reject)=>{
             if (!this.isDeployed) return resolve({})
             let assets = await global.blockchain.findContractAssets({

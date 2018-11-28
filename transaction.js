@@ -20,7 +20,7 @@ class TXin{
     let vout = prevTx.outs[this.index]
     let outAddr = vout.outAddr
     
-    if (vout.aliveTimestamp >0 && new Date().getTime() < vout.aliveTimestamp) return false
+    if (vout.lockTime >0 && new Date().getTime() < vout.lockTime) return false
     
     if (vout.signNum && vout.signNum>this.pubkey.length){
       logger.warn(`需要签名校验的数量${vout.signNum}大于提供的公钥数量`)
@@ -62,7 +62,7 @@ class TXout{
     this.contractHash = args.contractHash || ""
     this.script=args.script   || ""
     this.assets=args.assets   || {}
-    this.aliveTimestamp = args.aliveTimestamp || 0
+    this.lockTime = args.lockTime || 0
     if (this.script && !this.contractHash)
       this.contractHash = utils.hashlib.hash160(this.script)
   }
@@ -70,8 +70,7 @@ class TXout{
     if (this.outAddr != address) {
       return false
     }
-    if (this.aliveTimestamp>0 && new Date().getTime()<this.aliveTimestamp) {
-      logger.warn("timestamp",new Date().getTime(),this.aliveTimestamp)
+    if (this.lockTime>0 && new Date().getTime()<this.lockTime) {
       return false
     }
     return true
@@ -142,18 +141,18 @@ class Transaction{
     let timestamp=data["timestamp"]
     return new Transaction({hash,timestamp,ins,outs})
   }
-  static async newTransaction({inPrvkey,inPubkey,inAddr,outAddr,amount,utxo,script="",assets={},signNum=1,aliveTimestamp=0}){
+  static async newTransaction({inPrvkey,inPubkey,inAddr,outAddr,amount,utxo,script="",assets={},signNum=1,lockTime=0}){
     if (!Array.isArray(inPrvkey)) inPrvkey = [inPrvkey]
     return new Promise((resolve,reject)=>{
       let preNewTx = Transaction.preNewTransaction({
-          inAddr,outAddr,amount,utxo,script,assets,signNum,aliveTimestamp})
+          inAddr,outAddr,amount,utxo,script,assets,signNum,lockTime})
       preNewTx = Transaction.sign(inPrvkey,inPubkey,preNewTx)
       Transaction.newRawTransaction(preNewTx,utxo)
         .then(result=>resolve(result))
         .catch(error=>reject(error))
     })
   }
-  static preNewTransaction({inAddr,outAddr,amount,utxo,script="",assets={},signNum,aliveTimestamp}){
+  static preNewTransaction({inAddr,outAddr,amount,utxo,script="",assets={},signNum,lockTime}){
     if (amount<0) throw new Error("金额不能小于零")
     let ins=[]
     let outs=[]
@@ -187,14 +186,14 @@ class Transaction{
                "signNum":signNum,
                "script":script,
                "assets":assets,
-               "aliveTimestamp":aliveTimestamp})
+               "lockTime":lockTime})
     if (todo["acc"] > amount){
       outs.push({"amount":parseFloat((todo["acc"]-amount).toPrecision(12)),
                  "outAddr":inAddr,
                  "signNum":maxSignNum,  //????
                  "script":"",
                  "assets":{},
-                 "aliveTimestamp":aliveTimestamp
+                 "lockTime":lockTime
                  })
     }
     return {rawIns:ins,rawOuts:outs}

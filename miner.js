@@ -191,7 +191,7 @@ app.use(express.static(path.join(__dirname,"/static/dist")))
 app.use(bodyParser.urlencoded({
   extended: true
 }));
-
+app.use(bodyParser.json());
 
 
 app.get('/debug',function(req,res){
@@ -506,9 +506,9 @@ app.post('/trade',function(req,res,next){
   const nameFrom = req.body.inAddr
   const nameTo   = req.body.outAddr
   const amount   = parseFloat(req.body.amount)
-  const aliveTimestamp = parseInt(req.body.aliveTimestamp)
+  const lockTime = parseInt(req.body.lockTime)
 
-  node.tradeTest({nameFrom,nameTo,amount,script,assets,aliveTimestamp})
+  node.tradeTest({nameFrom,nameTo,amount,script,assets,lockTime})
     .then(data=>{
         //res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
         res.json({errCode:0,errText:'',result:data})
@@ -518,12 +518,12 @@ app.post('/trade',function(req,res,next){
       })
 })
 
-app.get('/trade/:nameFrom/:nameTo/:amount/:aliveTimestamp',function(req,res,next){
+app.get('/trade/:nameFrom/:nameTo/:amount/:lockTime',function(req,res,next){
   const nameFrom = req.params.nameFrom
   const nameTo   = req.params.nameTo
   const amount   = parseFloat(req.params.amount)
-  const aliveTimestamp = parseInt(req.params.aliveTimestamp)
-  node.tradeTest({nameFrom,nameTo,amount,aliveTimestamp})
+  const lockTime = parseInt(req.params.lockTime)
+  node.tradeTest({nameFrom,nameTo,amount,lockTime})
     .then(data=>{
         res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
       })
@@ -654,21 +654,6 @@ app.post('/run/script',async function(req,res){
     res.json({"errCode":1,"errText":error.stack,"result":false})
     return
   }
-  /*
-  try{
-    let p = await contract.run()
-    if (p && typeof p.then == "function"){
-      await p.then((result)=>res.json({"errCode":0,"errText":'',"result":result}))
-       .catch((error)=>res.json({"errCdde":1,"errText":error.stack,"result":false}))
-    }else{
-      res.json({"errCode":0,"errText":'',"result":p})
-    }
-    return
-  }catch(error){
-    res.json({"errCode":2,"errText":error.stack,"result":false})
-    return
-  }
-  */
   try{
     let result = await contract.run()
     res.json({"errCode":0,"errText":'',"result":result})
@@ -682,6 +667,7 @@ app.get("/emitter/:event/:msg",function(req,res){
   global.emitter.emit(req.params.event,req.params.msg)
   res.end(`have send [${req.params.event}] with message [${req.params.msg}].`)
 })
+
 
 app.get("*",function(req,res){
   res.status(404)

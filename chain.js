@@ -42,7 +42,7 @@ class UTXO{
                                      "outAddr":txout.outAddr,
                                      "signNum":txout.signNum,
                                      "script":txout.script,
-                                     "aliveTimestamp":txout.aliveTimestamp
+                                     "lockTime":txout.lockTime
                                      })
                       })
           }
@@ -134,7 +134,7 @@ class UTXO{
                                    "outAddr":txout.outAddr,
                                    "signNum":txout.signNum,
                                    "script":txout.script,
-                                   "aliveTimestamp":txout.aliveTimestamp
+                                   "lockTime":txout.lockTime
                                    })
                         })
     }
@@ -186,7 +186,7 @@ class UTXO{
                 "outAddr": prevTX.outs[txin.index].outAddr,
                 "signNum": prevTX.outs[txin.index].signNum,
                 "script" : prevTX.outs[txin.index].script,
-                "aliveTimestamp":prevTX.outs[txin.index].aliveTimestamp
+                "lockTime":prevTX.outs[txin.index].lockTime
                 })
             })
         utxoSet[txin.prevHash] = outs

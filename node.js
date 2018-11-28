@@ -97,7 +97,7 @@ class Node{
              script  :data.script,
              assets  :data.assets,
              signNum :data.signNum,
-             aliveTimestamp : data.aliveTimestamp})
+             lockTime : data.lockTime})
         .then((tx)=>logger.warn("合约部署已提交",tx.hash))
         .catch((error)=>{throw error})
     })
@@ -109,7 +109,7 @@ class Node{
             script  :"",
             assets  :data.assets,
             signNum :data.signNum,
-            aliveTimestamp : data.aliveTimestamp})
+            loctTime : data.lockTime})
         .then((tx)=>{
             logger.warn("新资源交易已提交",tx.hash)
             if (cb){
@@ -131,7 +131,7 @@ class Node{
            script  :"",
            assets  :data.assets,
            signNum :data.signNum,
-           aliveTimestamp : data.aliveTimestamp})
+           lockTime : data.lockTime})
         .then((tx)=>{
           logger.warn("新支付交易已提交",tx.hash)
           if (cb) cb(null,tx.hash)
@@ -184,9 +184,11 @@ class Node{
       
       //sync blockchain
       logger.warn("start1","this.syncOverallChain")
-      await this.syncOverallChain(this.config.full).then(bestIndex=>{
+      //await
+      this.syncOverallChain(this.config.full).then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())
-      })
+      }).catch(err=>{console.log(err.stack)})
+      
       logger.warn("start2","resetUTXO")      
       
       
@@ -197,6 +199,7 @@ class Node{
         this.syncOverallChain(false)
           .then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())})
+          .catch(err=>{console.log(err.stack)})
       },global.SYNC_BLOCKCHAIN)
       
       logger.warn("start3","blockProcess")         
@@ -232,8 +235,9 @@ class Node{
       let maxindex = this.blockchain.maxindex()
       let blocksDict = await global.db.findMany("blockpool",{"index":maxindex+1},{"projection":{_id:0}})
       if (blocksDict.length!=0){
-        await this.blockPoolSync(blocksDict)
+        let test = await this.blockPoolSync(blocksDict)
           .catch((error)=>{logger.error(error.stack)})
+        console.log(test)
       }else{
         let endBlock = await global.db.findOne("blockpool",{"index":{"$gte":maxindex+1}},{"projection":{_id:0},"sort":["index","ascending"]})
         if (!endBlock) {
@@ -767,6 +771,7 @@ class Node{
       }
       if (!forkLevels[index])
         forkLevels[index] = await utils.db.findMany("blockpool",{"index":index},{"_id":0})
+      logger.warn("resolveFork:",index,forkLevels[index])
       if (forkLevels[index].length==0) return false
       for (let forkBlock of forkLevels[index]){
         if (block.prevHash != forkBlock.hash) continue
@@ -908,7 +913,7 @@ class Node{
       return false
     }
   }
-  async tradeTest({nameFrom,nameTo,amount,script="",assets={},aliveTimestamp=0}){
+  async tradeTest({nameFrom,nameTo,amount,script="",assets={},lockTime=0}){
     let wFrom,wTo
     let inAddr,outAddr
     let inPrvkey,inPubkey,outPubkey
@@ -955,7 +960,7 @@ class Node{
     }
     if (wFrom.key.prvkey){
       let txDict = await this.trade({
-        inPrvkey,inPubkey,inAddr,outAddr,amount,script,assets,signNum,aliveTimestamp}).catch(error=>{
+        inPrvkey,inPubkey,inAddr,outAddr,amount,script,assets,signNum,lockTime}).catch(error=>{
           throw error
         })
       return txDict
@@ -964,7 +969,7 @@ class Node{
     }
   }
 
-  async trade({inPrvkey,inPubkey,inAddr,outAddr,amount,script="",assets={},signNum,aliveTimestamp}){
+  async trade({inPrvkey,inPubkey,inAddr,outAddr,amount,script="",assets={},signNum,lockTime=0}){
     const newTX= await Transaction.newTransaction({
            inPrvkey:inPrvkey,
            inPubkey:inPubkey,
@@ -975,7 +980,7 @@ class Node{
            script:script,
            assets:assets,
            signNum:signNum,
-           aliveTimestamp:aliveTimestamp}).catch(error=>{throw error})
+           lockTime:lockTime}).catch(error=>{throw error})
     if (!newTX) return
     let newTXdict=utils.obj2json(newTX)
     this.emitter.emit("transacted",newTXdict)
