@@ -45,7 +45,7 @@ class FormWalletAddress extends React.Component {
       }
       if (this.props.onSubmit){
         let address = values.walletAddress
-        if (address.length!=64){
+        if (address.length!=34){
           this.handleAjax(this.props.url,`wallet/getAddress/${address}`,
             (value)=>{
               this.props.onSubmit(value)

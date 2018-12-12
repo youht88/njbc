@@ -90,6 +90,11 @@ class Node{
     })
 
     global.emitter.on("deployContract",(data={})=>{
+      logger.warn(data.owner)
+      logger.warn(data.amount)
+      logger.warn(data.assets)
+      logger.warn(data.script)
+      logger.warn(data.signNum)
       this.tradeTest({
              nameFrom:data.owner,
              nameTo  :"",
@@ -101,10 +106,32 @@ class Node{
         .then((tx)=>logger.warn("合约部署已提交",tx.hash))
         .catch((error)=>{throw error})
     })
+    global.emitter.on("trade",(data={},cb)=>{
+      this.tradeTest({
+            nameFrom:data.from,
+            nameTo  :data.to,
+            amount  :data.amount,
+            script  :"",
+            assets  :data.assets,
+            signNum :data.signNum,
+            loctTime : data.lockTime})
+        .then((tx)=>{
+            logger.warn("新支付交易已提交",tx.hash)
+            if (cb){
+              cb(null,tx.hash)
+            }
+          })
+        .catch((error)=>{
+            if (cb){
+              cb(error,null)
+            }
+            throw error
+          })
+    })
     global.emitter.on("setAssets",(data={},cb)=>{
       this.tradeTest({
-            nameFrom:data.caller,
-            nameTo  :data.contractAddr,
+            nameFrom:data.from,
+            nameTo  :data.to,
             amount  :data.amount,
             script  :"",
             assets  :data.assets,
@@ -151,8 +178,6 @@ class Node{
         this.syncNode()
       }
       //genesis block ,only first node first time to use 
-      const localChain = await this.syncLocalChain()
-      //logger.debug("localChain",localChain)
       if (this.blockchain.blocks.length==0){
         //get zero block from entryNode
         const promiseArray = this.getERpcData("getBlocks",{start:0,end:0})
@@ -185,7 +210,7 @@ class Node{
       //sync blockchain
       logger.warn("start1","this.syncOverallChain")
       //await
-      this.syncOverallChain(this.config.full).then(bestIndex=>{
+      await this.syncOverallChain(this.config.full).then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())
       }).catch(err=>{console.log(err.stack)})
       
@@ -196,6 +221,7 @@ class Node{
       this.resetUTXO()
       
       setInterval(()=>{
+        logger.error("start syncOverallChain...")
         this.syncOverallChain(false)
           .then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())})
@@ -232,28 +258,48 @@ class Node{
   
   async blockProcess(){
     try{
+      let promiseArray
+      let start,end
+      let results
       let maxindex = this.blockchain.maxindex()
       let blocksDict = await global.db.findMany("blockpool",{"index":maxindex+1},{"projection":{_id:0}})
       if (blocksDict.length!=0){
-        let test = await this.blockPoolSync(blocksDict)
+        let done = await this.blockPoolSync(blocksDict)
           .catch((error)=>{logger.error(error.stack)})
-        console.log(test)
+        logger.warn("blockprocess",done)
+        if (!done){
+          start = (maxindex - global.NUM_FORK >1)?maxindex - global.NUM_FORK:1
+          end = maxindex + 1
+          promiseArray = this.getARpcData("getBlocks",{start,end})
+          results = await Promise.all(promiseArray)
+          logger.warn("blockprocess",start,end,results)
+          if (results.length<=0) 
+            return setTimeout(this.blockProcess.bind(this),100)
+          for (let result of results){
+            for (let blockDict of result.data){
+              const block = new Block(blockDict)
+              if (block.isValid())
+                block.saveToPool()
+            }
+          }
+        }
       }else{
         let endBlock = await global.db.findOne("blockpool",{"index":{"$gte":maxindex+1}},{"projection":{_id:0},"sort":["index","ascending"]})
         if (!endBlock) {
-          return setTimeout(this.blockProcess.bind(this),0)
+          return setTimeout(this.blockProcess.bind(this),100)
         }
         if (maxindex+1 > endBlock.index -1 ) {
-          return setTimeout(this.blockProcess.bind(this),0)
+          return setTimeout(this.blockProcess.bind(this),100)
         } 
         console.log("want block",maxindex+1,endBlock.index - 1)
-        
-        const promiseArray = this.getARpcData("getBlocks",{start:maxindex+1,end:endBlock.index - 1})
-        const results = await Promise.all(promiseArray)
+        start = maxindex+1
+        end   = endBlock.index - 1
+        promiseArray = this.getARpcData("getBlocks",{start,end})
+        results = await Promise.all(promiseArray)
         
         console.log("get block...",results)
         if (results.length<=0) 
-          return setTimeout(this.blockProcess.bind(this),0)
+          return setTimeout(this.blockProcess.bind(this),100)
         for (let result of results){
           for (let blockDict of result.data){
             const block = new Block(blockDict)
@@ -262,23 +308,30 @@ class Node{
           }
         }
       }
-      setTimeout(this.blockProcess.bind(this),0)
+      setTimeout(this.blockProcess.bind(this),100)
     }catch(error){
       logger.fatal("blockProcess",error.stack)
-      setTimeout(this.blockProcess.bind(this),0)
+      setTimeout(this.blockProcess.bind(this),100)
     }
   }
   
   async minerProcess(){
     try{
-      const txPoolCount = await global.db.count("transaction",{})
+      let timestamp = new Date().getTime()
+      const txPoolCount = await global.db.count("transaction",{$or:[{lockTime:0},{lockTime:{$lte:timestamp}}]})
       if (txPoolCount < global.TRANSACTION_TO_BLOCK) {
         return
       }
       const coinbase=Transaction.newCoinbase(this.wallet.address)
       //mine
       await this.mine(coinbase)
-        .then((data)=>{logger.warn("minerProcess:",data)})
+        .then((data)=>{
+            if (typeof data == "string"){
+              logger.warn("minerProcess:",data)
+            }else {
+              logger.warn("minerProcess:",`${data.index}-${data.nonce}`) 
+            }
+          })
         .catch((error)=>{logger.error(error.stack)})
       return setTimeout(this.minerProcess.bind(this),0)
     }catch(error){
@@ -554,6 +607,7 @@ class Node{
   async checkNode(){
     const that = this
     setInterval(()=>{
+      logger.error("start checkNode...")
       if (that.socketioClient && that.socketioClient.connected)
         return
       let node = that.nodes.shift()
@@ -737,7 +791,8 @@ class Node{
   async txPoolSync(){
     return new Promise(async (resolve,reject)=>{
       let txPool=[]
-      await global.db.findMany("transaction",{},{"projection":{"_id":0},"sort":[["timestamp","ascending"]]}).then(docs=>{
+      let now = new Date().getTime()
+      await global.db.findMany("transaction",{$or:[{lockTime:0},{lockTime:{$lte:now}}]},{"projection":{"_id":0},"sort":[["timestamp","ascending"]]}).then(docs=>{
           for (let tx of docs){
             txPool.push(Transaction.parseTransaction(tx))
           }
@@ -771,7 +826,6 @@ class Node{
       }
       if (!forkLevels[index])
         forkLevels[index] = await utils.db.findMany("blockpool",{"index":index},{"_id":0})
-      logger.warn("resolveFork:",index,forkLevels[index])
       if (forkLevels[index].length==0) return false
       for (let forkBlock of forkLevels[index]){
         if (block.prevHash != forkBlock.hash) continue
@@ -801,7 +855,7 @@ class Node{
       if (!block.isValid()) continue
       if (block.prevHash != this.blockchain.lastblock().hash){
         let resolve = await this.resolveFork(linkBlocks)  
-        logger.warn("blockPoolSync",resolve,linkBlocks)
+        logger.warn("blockPoolSync",resolve,linkBlocks.map(block=>{return `${block.index}-${block.nonce}`}))
         if (!resolve) continue
       }  
       //将linkBlocks联入blockchain
@@ -991,6 +1045,7 @@ class Node{
     logger.info("transaction广播完成")
     return newTXdict
   }
+  
   async genesisBlock(coinbase){
     return new Promise(async (resolve,reject)=>{
       let newBlock=await this.findNonce(
@@ -998,6 +1053,7 @@ class Node{
         "prev_hash":"0",
         "data":[coinbase],
         "diffcult":global.ZERO_DIFF,
+        "lockTime":0,
         "timestamp":new Date().getTime()
         }
       )
@@ -1056,7 +1112,8 @@ class Node{
     //self.updateUTXO(newBlock)
     
     if (cb)
-      cb(null,newBlock)
+      return cb(null,newBlock)
+    return newBlock
   }
   async findNonce(blockDict){
     return new Promise((resolve,reject)=>{

@@ -12,6 +12,8 @@ class TXin{
     this.inAddr  =args.inAddr||""
     this.pubkey  =args.pubkey||[]
     this.sign    =args.sign  ||[]
+    if (!Array.isArray(this.pubkey)) this.pubkey=[this.pubkey]
+    if (!Array.isArray(this.sign))   this.sign = [this.sign]
   }
   canUnlockWith(){
     let prevTx = global.blockchain.findTransaction(this.prevHash)
@@ -20,7 +22,7 @@ class TXin{
     let vout = prevTx.outs[this.index]
     let outAddr = vout.outAddr
     
-    if (vout.lockTime >0 && new Date().getTime() < vout.lockTime) return false
+    //if (vout.lockTime >0 && new Date().getTime() < vout.lockTime) return false
     
     if (vout.signNum && vout.signNum>this.pubkey.length){
       logger.warn(`需要签名校验的数量${vout.signNum}大于提供的公钥数量`)
@@ -62,15 +64,11 @@ class TXout{
     this.contractHash = args.contractHash || ""
     this.script=args.script   || ""
     this.assets=args.assets   || {}
-    this.lockTime = args.lockTime || 0
     if (this.script && !this.contractHash)
       this.contractHash = utils.hashlib.hash160(this.script)
   }
   canbeUnlockWith(address){
     if (this.outAddr != address) {
-      return false
-    }
-    if (this.lockTime>0 && new Date().getTime()<this.lockTime) {
       return false
     }
     return true
@@ -87,6 +85,7 @@ class Transaction{
     }else{
       this.timestamp = new Date().getTime() 
     }
+    this.lockTime = args.lockTime || 0
     if (args.hash){
       this.hash=args.hash
     }else{
@@ -96,6 +95,7 @@ class Transaction{
   preHeaderString(){
     return [JSON.stringify(this.ins),
             JSON.stringify(this.outs),
+            this.lockTime,
             this.timestamp].join("")
   }
   dumps(){
@@ -139,7 +139,8 @@ class Transaction{
     }
     let hash=data["hash"]
     let timestamp=data["timestamp"]
-    return new Transaction({hash,timestamp,ins,outs})
+    let lockTime = data["lockTime"]
+    return new Transaction({hash,timestamp,lockTime,ins,outs})
   }
   static async newTransaction({inPrvkey,inPubkey,inAddr,outAddr,amount,utxo,script="",assets={},signNum=1,lockTime=0}){
     if (!Array.isArray(inPrvkey)) inPrvkey = [inPrvkey]
@@ -185,18 +186,17 @@ class Transaction{
                "outAddr":outAddr,
                "signNum":signNum,
                "script":script,
-               "assets":assets,
-               "lockTime":lockTime})
+               "assets":assets
+              })
     if (todo["acc"] > amount){
       outs.push({"amount":parseFloat((todo["acc"]-amount).toPrecision(12)),
                  "outAddr":inAddr,
                  "signNum":maxSignNum,  //????
                  "script":"",
-                 "assets":{},
-                 "lockTime":lockTime
+                 "assets":{}
                  })
     }
-    return {rawIns:ins,rawOuts:outs}
+    return {rawIns:ins,rawOuts:outs,lockTime:lockTime}
   }
   
   static sign(inPrvkey,inPubkey,preNewTx){
@@ -228,7 +228,9 @@ class Transaction{
       for (let rawOut of raw.rawOuts){
         outs.push(new TXout(rawOut))
       }
-      let TX = new Transaction({ins,outs})
+      let lockTime = raw.lockTime
+      let TX = new Transaction({ins,outs,lockTime})
+      logger.warn("newRawTransaction",JSON.stringify(TX))
       let {...utxoSet} = utxo.utxoSet
       if (! utxo.updateWithTX(TX,utxoSet)){
         return reject(new Error("double spend!!,Maybe not enough money."))

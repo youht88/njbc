@@ -41,8 +41,7 @@ class UTXO{
                       "txout":new TXout({"amount":txout.amount,
                                      "outAddr":txout.outAddr,
                                      "signNum":txout.signNum,
-                                     "script":txout.script,
-                                     "lockTime":txout.lockTime
+                                     "script":txout.script
                                      })
                       })
           }
@@ -133,8 +132,7 @@ class UTXO{
                     "txout":new TXout({"amount":txout.amount,
                                    "outAddr":txout.outAddr,
                                    "signNum":txout.signNum,
-                                   "script":txout.script,
-                                   "lockTime":txout.lockTime
+                                   "script":txout.script
                                    })
                         })
     }
@@ -185,8 +183,7 @@ class UTXO{
                 "amount" : prevTX.outs[txin.index].amount,
                 "outAddr": prevTX.outs[txin.index].outAddr,
                 "signNum": prevTX.outs[txin.index].signNum,
-                "script" : prevTX.outs[txin.index].script,
-                "lockTime":prevTX.outs[txin.index].lockTime
+                "script" : prevTX.outs[txin.index].script
                 })
             })
         utxoSet[txin.prevHash] = outs
@@ -366,15 +363,15 @@ class Chain{
     }
     return false
   }
-  findThingsByCond({from=-1,direct=-1,maxtimes=null},cond){
+  findThingsByCond({fromIndex=-1,direct=-1,maxtimes=null},cond){
     if (!cond) return 
     let block,index
     let times=0,result={}
     let maxindex=this.blocks.length - 1
-    if (from==-1) {
-      from = maxindex
+    if (fromIndex==-1) {
+      fromIndex = maxindex
     }
-    index = from
+    index = fromIndex
     while (index>=0 && index<=maxindex){
       block = this.blocks[index] 
       let data=block.data
@@ -392,9 +389,9 @@ class Chain{
     }
   }
   findContract(contractHash){
-    let result=null
+    let result
     if (!contractHash){
-      result = []
+      result=[]
       this.findThingsByCond({},(block,TX)=>{
         if (TX.outs[0].contractHash.length!=0){
           result.push({
@@ -415,7 +412,8 @@ class Chain{
     }else{
       this.findThingsByCond({maxtimes:1},(block,TX)=>{
         if (TX.outs[0].contractHash==contractHash){
-          result =  {
+          result={
+            contractHash:TX.outs[0].contractHash,
             blockIndex:block.index,
             blockHash:block.hash,
             blockNonce:block.nonce,
@@ -432,6 +430,30 @@ class Chain{
     }
     return result
   }
+  findContractByKey(key){
+    let result
+    if (!key) return []
+    result=[]
+    this.findThingsByCond({},(block,TX)=>{
+      if (TX.outs[0].contractHash.length!=0 && TX.outs[0].assets && TX.outs[0].assets.title && TX.outs[0].assets.title.search(key)>=0 ){
+        result.push({
+          contractHash:TX.outs[0].contractHash,
+          blockIndex:block.index,
+          blockHash:block.hash,
+          blockNonce:block.nonce,
+          txHash:TX.hash,
+          contractAddr:TX.outs[0].outAddr,
+          script:TX.outs[0].script,
+          assets:TX.outs[0].assets,
+          owner :TX.ins[0].inAddr
+        })
+        return true
+      } 
+      return false
+    })
+    return result
+  }
+  
   findTransaction(uhash){
     let result={}
     this.findThingsByCond({maxtimes:1},(block,TX)=>{
@@ -498,16 +520,16 @@ class Chain{
       }
     }
     return this.findBalanceTo({
-        from:contract.blockIndex,
+        fromIndex:contract.blockIndex,
         direct:1,
         inAddr:contract.contractAddr,
         outAddr:outAddr
       })
   }
-  findBalanceTo({from=-1,direct,inAddr=null,outAddr=null}){
+  findBalanceTo({fromIndex=-1,direct,inAddr=null,outAddr=null}){
     //if (!outAddr) throw new Error("输出地址不能为空")
     let amount = 0
-    this.findThingsByCond({from:from,direct:direct},(block,tx)=>{
+    this.findThingsByCond({fromIndex:fromIndex,direct:direct},(block,tx)=>{
       if (tx.isCoinbase()) return false
       if ((!inAddr || tx.ins[0].inAddr == inAddr) && (!outAddr || tx.outs[0].outAddr == outAddr)){
         amount += tx.outs[0].amount
@@ -518,35 +540,34 @@ class Chain{
     console.log("total amount",amount)
     return amount
   }
-  async findContractAssets({contractHash,key=null,inAddr=null,list=false}){
+  async findContractAssets({contractHash,key=null,toAddr=null,list=false}){
     const contract = this.findContract(contractHash)
     if (!contract) return {}
     let assets = await this.findAssets({
          key:key,
-         from:contract.blockIndex,
-         outAddr:contract.contractAddr,
-         inAddr :inAddr,
+         fromIndex:contract.blockIndex,
+         fromAddr:contract.contractAddr,
+         toAddr :toAddr,
          list   :list
       })
     return assets
   }
-  async findAssets({key=null,from=0,outAddr=null,inAddr=null,list=false}){
-    //正序合并所有inAddr(如无inAddr则表示不限定)输出给outAddr的assets数据资源
-    console.log("...",outAddr,inAddr)
+  async findAssets({key=null,fromIndex=0,toAddr=null,fromAddr=null,list=false}){
+    //正序合并所有fromAddr输出给toAddr(如无toAddr则表示不限定)的assets数据资源
+    console.log("...",toAddr,fromAddr)
     let account
-    if (inAddr){
-      account = await new Wallet(inAddr).catch(error=>{return error})
-      inAddr = account.address
+    if (toAddr && !Wallet.isAddress(toAddr)){
+      account = await new Wallet(toAddr).catch(error=>{return error})
+      toAddr = account.address
     }
-    //if (!outAddr) throw new Error("输出地址不能为空")
     let assets = {}
     let newAssets
-    this.findThingsByCond({from:from,direct:1},async (block,tx)=>{
+    this.findThingsByCond({fromIndex:fromIndex,direct:1},async (block,tx)=>{
       if (tx.isCoinbase()) return false
-      if ((!outAddr || tx.outs[0].outAddr == outAddr) && 
-          (!inAddr || tx.ins[0].inAddr == inAddr)){
+      if ((!toAddr || tx.outs[0].outAddr == toAddr) && 
+          (!fromAddr || tx.ins[0].inAddr == fromAddr)){
         if (typeof tx.outs[0].assets == "string") { //加密
-          if (inAddr){
+          if (toAddr){
             try{
               newAssets = JSON.parse(utils.ecc.deCipher(tx.outs[0].assets,account.key.prvkey[0]))
             }catch(err){

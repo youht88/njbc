@@ -131,7 +131,7 @@ const config = syncConfigFile(args)
 global.REWARD = 2.0
 global.BLOCK_PER_HOUR = 3*60  //每小时出块数限制
 global.ADJUST_DIFF=100   //每多少块调整一次难度
-global.ZERO_DIFF = 3
+global.ZERO_DIFF = 5*4
 global.NUM_FORK = 6
 global.TRANSACTION_TO_BLOCK = 0
 global.SYNC_BLOCKCHAIN = 10*1000*60  //多少毫秒同步blockchain
@@ -169,6 +169,9 @@ const start= async ()=>{
     })
   node.wallet = mywallet
   logger.debug("mywallet.address",mywallet.address)
+  //导入本地区块链
+  await node.syncLocalChain()
+  logger.debug(`localchain has ${node.blockchain.maxindex()} blocks`)
   //链接网络
   logger.debug("socketioConnect...")
   await node.socketioConnect()
@@ -220,25 +223,37 @@ app.get('/bootstrap/test',function(req,res){
   let json = {"a":1,"b":2,"c":{c1:"x",c2:"y"}}
   res.send(`<pre>${JSON.stringify(json,null,4)}</pre>`)
 })
-app.get('/crypto',function(req,res){
-  //hashlib
-  const hashlib = utils.hashlib
-  console.log(hashlib.hash256({"b":2.00,"a":1.0}))
-  console.log(hashlib.md5({"b":2.00,"a":1.0}))
-  
+
+app.get('/crypto/newAddress',function(req,res){
   //crypto
-  const rsa = utils.rsa
-  const key = rsa.generateKeys()
-  encrypted = rsa.encrypt("abcd",key.pubkey)
-  console.log("encrypted",encrypted)
-  decrypted = rsa.decrypt(encrypted,key.prvkey)
-  console.log("decrypted",decrypted)
-  
-  sign = rsa.sign({"a":1,"b":2},key.prvkey)
-  console.log("sign",sign)
-  verify = rsa.verify({"a":1,"b":2.0},sign,key.pubkey)
-  console.log("verify",verify)
-  res.send('ok')
+  const ecc = utils.ecc
+  const key = ecc.generateKeys()
+  const address = Wallet.address(key.pubkey)
+  const keystore = {address:address,pubkey:key.pubkey,prvkey:key.prvkey}
+  res.json(keystore)
+})
+app.post('/crypto/sign',function(req,res){
+  //crypto
+  const ecc = utils.ecc
+  const prvkey = req.body.prvkey
+  const data = req.body.data
+  let sign = ecc.sign(data,prvkey)
+  let reg1=new RegExp("\\+","g")
+  let reg2=new RegExp("/","g")
+  sign = sign.replace(reg1,"*")
+  sign = sign.replace(reg2,"-")
+  logger.warn(sign)
+  res.end(sign,'utf8')
+})
+app.post('/crypto/verify',function(req,res){
+  //crypto
+  const ecc = utils.ecc
+  const pubkey = req.body.pubkey
+  const data = req.body.data
+  const sign = req.body.sign
+  const verify = ecc.verify(data,sign,pubkey)
+  logger.warn(verify)
+  res.end(verify)
 })
 
 app.get('/socket/getClientInfo',function(req,res){
@@ -456,10 +471,13 @@ app.get('/wallet/me',function(req,res){
 })
 
 app.get('/wallet/:address',async (req,res)=>{
-  const address = req.params.address
-  let  wallet = await new Wallet(address).catch(e=>res.end(e.stack))
-  const balance = node.blockchain.utxo.getBalance(wallet.address)
-  const json = {"address":wallet.address,"pubkey":wallet.pubkey,"blance":balance}
+  let address = req.params.address
+  if (!Wallet.isAddress(address)){
+    let  wallet = await new Wallet(address).catch(e=>res.end(e.stack))
+    address = wallet.address
+  }
+  const balance = node.blockchain.utxo.getBalance(address)
+  const json = {"address":address,"balance":balance}
   if (config.debug)
     res.send(`</pre>${JSON.stringify(json,null,4)}</pre>`)
   else
@@ -471,8 +489,12 @@ app.get('/wallet/getAddress/:name',async function(req,res){
   if (name =='me'){
     name=node.me
   }
-  wallet = await new Wallet(name)
-  res.send(wallet.address)
+  try{
+    wallet = await new Wallet(name)
+    res.send(wallet.address)
+  }catch(e){
+    res.send(name)
+  }
 })
 
 app.get('/wallet/create/:name',async (req,res,next)=>{
@@ -487,9 +509,14 @@ app.get('/wallet/create/:name',async (req,res,next)=>{
   let balance = node.blockchain.utxo.getBalance(wallet.address)
   let response= {"name":name,
           "address":wallet.address,
-          "pubkey":wallet.pubkey,
-          "balance":balance}
-  res.send(`</pre>${JSON.stringify(response,null,4)}</pre>`)
+          "pubkey":wallet.key.pubkey[0],
+          "prvkey":wallet.key.prvkey[0]
+         }
+  logger.warn("wallet/create",response)
+  if (config.debug)
+    res.send(`</pre>${JSON.stringify(response,null,4)}</pre>`)
+  else
+    res.json(response)
 })
 ////////////// trade interface /////////////
 app.post('/trade',function(req,res,next){
@@ -518,11 +545,11 @@ app.post('/trade',function(req,res,next){
       })
 })
 
-app.get('/trade/:nameFrom/:nameTo/:amount/:lockTime',function(req,res,next){
+app.get('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
   const nameFrom = req.params.nameFrom
   const nameTo   = req.params.nameTo
   const amount   = parseFloat(req.params.amount)
-  const lockTime = parseInt(req.params.lockTime)
+  const lockTime = 0
   node.tradeTest({nameFrom,nameTo,amount,lockTime})
     .then(data=>{
         res.send(`<pre>${JSON.stringify(data,null,4)}</pre>`)
@@ -531,6 +558,66 @@ app.get('/trade/:nameFrom/:nameTo/:amount/:lockTime',function(req,res,next){
       console.log(error.stack)
       res.end(error.stack)
       })
+})
+
+app.post('/trade/preNewTransaction',function(req,res,next){
+  const inAddr = req.body.inAddr
+  const outAddr = req.body.outAddr
+  const amount   = parseFloat(req.body.amount)
+  const script   = req.body.script
+  let   assets   = req.body.assets
+  const lockTime = parseInt(req.body.lockTime)
+  const signNum = 1
+  const utxo  = node.tradeUTXO
+  let result
+  try{
+    if (typeof assets == "string"){
+      assets = JSON.parse(utils.bufferlib.b64decode(assets))
+    }
+    console.log("preNewTransaction",assets)
+    result = Transaction.preNewTransaction({inAddr,outAddr,amount,utxo,script,assets,signNum,lockTime})
+    res.json({errCode:0,errText:'',result:result})
+  }catch(error){
+    res.json({errCode:4,errText:error.stack,result:null})   
+  }
+})
+
+app.post('/trade/newRawTransaction',async function(req,res,next){
+  try{
+    let raw = req.body.raw
+    //if is base64
+    if (typeof raw == "string"){
+      raw=JSON.parse(utils.bufferlib.b64decode(raw))
+    }
+    //当数组个数为1的时候苹果捷径系统自动设置非数组形式，所以在这里判断将rawIns变为数组
+    //sign签名应为捷径的原因，做响应的转换(*,+)(-,/)
+    if (!Array.isArray(raw.rawIns))  
+      raw.rawIns = [raw.rawIns]
+      let reg1=new RegExp("\\*","g")
+      let reg2=new RegExp("-","g")
+      for (let rawIn of raw.rawIns){
+        rawIn.sign = rawIn.sign.replace(reg1,"+")
+        rawIn.sign = rawIn.sign.replace(reg2,"/")
+      }
+    if (!Array.isArray(raw.rawOuts))  
+      raw.rawOuts = [raw.rawOuts]
+    
+    const utxo  = node.tradeUTXO
+    let result
+    
+    let newTX = await Transaction.newRawTransaction(raw,utxo)
+    if (!newTX) return
+    let newTXdict=utils.obj2json(newTX)
+    node.emitter.emit("transacted",newTXdict)
+    // use socket to broadcast instead of http
+    logger.info(`broadcast transaction ${newTX.hash}`)
+    node.broadcast(newTXdict,"newTransaction")
+    
+    logger.info("transaction广播完成")
+    res.json({errCode:0,errText:'',result:newTXdict})
+  }catch(error){
+    res.json({errCode:4,errText:error.stack,result:null})   
+  }
 })
 
 ////////// transaction interface/////////////////
@@ -578,6 +665,26 @@ app.get('/contract/:hash',function(req,res){
     res.send(`<pre>${JSON.stringify(contract,null,4)}</pre>`)
   else 
     res.send(contract)
+})
+
+app.get('/contract/title/:keyword',function(req,res){
+  const keyword = req.params.keyword
+  const contract = node.blockchain.findContractByKey(keyword)
+  if (config.debug) 
+    res.send(`<pre>${JSON.stringify(contract,null,4)}</pre>`)
+  else 
+    res.send(contract)
+})
+
+app.post('/contract/deploy',function(req,res){
+  const script = req.body.script
+  const assets = req.body.assets
+  logger.warn(assets)
+  const owner  = req.body.owner
+  const amount = req.body.amount
+  const contract = new Contract({script,assets})
+  contract.deploy({owner,amount})
+  res.send('ok')
 })
 
 /////////////// aggregate //////////////////////
@@ -679,3 +786,4 @@ app.set('port', process.env.PORT || 4000);
 var server = http.listen(app.get('port'), function() {
   console.log('start at port:' + server.address().port);
 });
+

@@ -96,10 +96,14 @@ class Block{
     //logger.debug("verify proof of work")
     this.updateHash()
 
-    if (this.hash.slice(0,this.diffcult) != Array(this.diffcult+1).join('0')){
+    let length = Math.floor(this.diffcult / 4 )
+    let mod = this.diffcult % 4
+         
+    if ( parseInt(this.hash.slice(0,length+1),16) >= 2**(4-mod) ){
       logger.error(`${this.hash} is not worked because of WOF is not valid`)
       return false
     }
+    
     //logger.debug(`${this.hash} is truly worked`)
     logger.debug("verify transaction data")
     for (let transaction of this.data){

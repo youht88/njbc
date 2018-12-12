@@ -15,7 +15,7 @@ class Contract{
     this.txHash  = ""
     this.script  = args.script  ||""
     this.contractHash = args.contractHash ||""
-    this.assets  = {}
+    this.assets  = args.assets||{}
     this.owner  = ""
     this.version=""
     
@@ -42,9 +42,10 @@ class Contract{
     this.owner        = contractDict.owner
     return true      
   }
-  deploy(owner,amount,assets={},lockTime=0){
+  deploy({owner,amount,lockTime=0}){
     if (!this.check()) return
-    let script = this.script   
+    let script = this.script
+    let assets = this.assets   
     global.emitter.emit("deployContract",{owner,amount,script,assets,lockTime})  
   }
   check(){
@@ -181,7 +182,17 @@ class Contract{
       }
       sandbox["getContract"] = (contractHash)=>{
         let contract = global.blockchain.findContract(contractHash)
-        return contract
+        let contractSlim
+        if (!Array.isArray(contract))
+          return contract
+        contractSlim = contract.map(item=>{
+          return {contractHash:item.contractHash,
+                  blockIndex:item.blockIndex,
+                  contractAddr:item.contractAddr,
+                  owner:item.owner,
+                  assets:item.assets}
+        })
+        return contractSlim
       }
       sandbox["ajax"] = async (url,options)=>{
         /******  options struct  ********
@@ -290,24 +301,34 @@ class Contract{
             if (encrypt) {
               assets = utils.ecc.enCipher(assets,account.key.prvkey[0])
             }
-            global.emitter.emit("setAssets",{
-                caller      :account.address,
-                contractAddr:this.contractAddr,
-                amount      :amount,
-                assets      :assets,
+            global.emitter.emit("trade",{
+                from      :account.address,
+                to        :this.contractAddr,
+                amount    :amount,
+                assets    :{},
                 lockTime : lockTime
-              },(err,result)=>{
-                if (err) return reject(err)
-                resolve(result)
-                logger.warn(`更新资源 ${JSON.stringify(assets)} 到 ${this.contractAddr}的交易已提交,txHash=${result}`)
+              },(err1,result1)=>{
+                if (err1) return reject(err1)
+                logger.warn(`${account.address}支付给${this.contractAddr}的交易已提交,txHash=${result1}`)
+                global.emitter.emit("setAssets",{
+                    from      :this.contractAddr,
+                    to        :account.address,
+                    amount    :0,
+                    assets    :assets,
+                    lockTime  : lockTime
+                  },(err2,result2)=>{
+                    if (err2) return reject(err2)
+                    resolve([result1,result2])
+                    logger.warn(`更新资源 ${JSON.stringify(assets)} 到 ${account.address}的交易已提交,txHash=${result}`)
+                })
             })
           })
         }
-        async get(key=null,inAddr=null,list=false){
+        async get(key=null,toAddr=null,list=false){
           return new Promise(async (resolve,reject)=>{
             if (!this.isDeployed) return resolve({})
             let assets = await global.blockchain.findContractAssets({
-              contractHash:this.contractHash,key:key,inAddr:inAddr,list:list}).catch(error=>{
+              contractHash:this.contractHash,key:key,toAddr:toAddr,list:list}).catch(error=>{
                 reject(error)
               })
             resolve(assets)

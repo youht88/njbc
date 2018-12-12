@@ -191,6 +191,27 @@ class ECC extends Crypto{
     ecdh.setPrivateKey(prvkey,"base64")
     return ecdh.computeSecret(Buffer.from(pubkey,"base64")).toString("base64")
   }
+  getKeys(prvkey){
+    const ecdh = crypto.createECDH(this.namedCurve)
+    ecdh.setPrivateKey(prvkey,"base64")
+    const pubkey = ecdh.getPublicKey("base64")
+    return {"prvkey":prvkey,"pubkey":pubkey}
+  }
+  genKeys(keyStr,num){
+    if (!num) num=1
+    const hashlib=new Hashlib()
+    const bufferlib = new Bufferlib()
+    let seed  = hashlib.sha512(keyStr)
+    let keys=[]
+    for (let i=0 ;i<num;i++){
+      const temp = hashlib.sha512(seed)      
+      seed =temp.slice(64,128)
+      const prvkey=Buffer.from(temp.slice(0,64),'hex').toString('base64')
+      keys.push(this.getKeys(prvkey))
+    }
+    return keys   
+  }
+  
 }
 class RSA extends Crypto{
   constructor(modulusLength=1024,namedCipher='aes192'){
@@ -238,6 +259,12 @@ class Hashlib{
     hash.update(str)
     return hash.digest("hex")
   }
+  sha512(...data){
+    const hash = crypto.createHash("sha512")
+    const str = data.map(i=>JSON.stringify(i)).join("")
+    hash.update(str)
+    return hash.digest("hex")
+  }
   md5(...data){
     const hash = crypto.createHash("md5")
     const str = data.map(i=>JSON.stringify(i)).join("")
@@ -263,7 +290,8 @@ class Bufferlib{
   }
   b64encode(str){
     //对字符串进行base64编码
-    return Buffer.from(str).toString('base64')
+    
+    Buffer.from(str).toString('base64')
   }
   b64decode(str){
     //对base64编码的字符串进行解码

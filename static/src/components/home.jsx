@@ -72,7 +72,7 @@ class BlockList extends React.Component{
     if (nextProps.maxindex>=0){
       let from,to
       to=nextProps.maxindex
-      from = (to - 9)>=0 ? (to-9) : 0 
+      from = (to - 50)>=0 ? (to-50) : 0 
       console.log(from.toString()+","+to.toString())
       this.handleAjax(`blockchain/${from}/${to}`,
         (value)=>{
@@ -127,7 +127,7 @@ class BlockList extends React.Component{
     const {data,columns} = this.state
     return(
       <div>
-        <Divider orientation="left"><h1>最近的十条交易</h1></Divider>
+        <Divider orientation="left"><h1>最近的50条交易</h1></Divider>
         <h2><Link to='/blockchain'>更多...</Link></h2>
         <Table dataSource={data} columns={columns}/>
       </div>
