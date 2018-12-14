@@ -322,9 +322,8 @@ class Node{
       if (txPoolCount < global.TRANSACTION_TO_BLOCK) {
         return
       }
-      const coinbase=Transaction.newCoinbase(this.wallet.address)
       //mine
-      await this.mine(coinbase)
+      await this.mine()
         .then((data)=>{
             if (typeof data == "string"){
               logger.warn("minerProcess:",data)
@@ -1063,16 +1062,31 @@ class Node{
     })
   }
   
-  async mine(coinbase,cb){
+  async mine(cb){
     this.mining = true
     //sync transaction from txPool
     let txPool = [] 
-    txPool.push(coinbase)
+    let fee=0
+    let value = []
     await this.txPoolSync().then((txs)=>{
       for(let tx of txs){
         txPool.push(tx)
+        //处理交易费
+        let inAmount=0,outAmount=0
+        for (let txIn of tx.ins){
+          let prevTx = this.blockchain.findTransaction(txIn.prevHash)
+          inAmount += prevTx.outs[txIn.index].amount
+        }
+        for (let txOut of tx.outs){
+          outAmount += txOut.amount
+        }
+        value.push({inAmount,outAmount})
+        fee +=  inAmount - outAmount       
       }
-    })  
+    })
+    let coinbase = Transaction.newCoinbase(this.wallet.address,fee)
+    txPool.unshift(coinbase)
+    
     let prevBlock = this.blockchain.lastblock()
     
     //mine a block with a valid nonce

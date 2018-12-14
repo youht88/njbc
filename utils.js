@@ -194,8 +194,9 @@ class ECC extends Crypto{
   getKeys(prvkey){
     const ecdh = crypto.createECDH(this.namedCurve)
     ecdh.setPrivateKey(prvkey,"base64")
-    const pubkey = ecdh.getPublicKey("base64")
-    return {"prvkey":prvkey,"pubkey":pubkey}
+    const keys=this.generateKeys()
+    //const pubkey = ecdh.getPublicKey("base64")
+    return {"prvkey":keys.prvkey,"pubkey":keys.pubkey}
   }
   genKeys(keyStr,num){
     if (!num) num=1

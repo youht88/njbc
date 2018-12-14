@@ -518,6 +518,27 @@ app.get('/wallet/create/:name',async (req,res,next)=>{
   else
     res.json(response)
 })
+
+app.post('/wallet/create/:name/:num',async (req,res,next)=>{
+  const sentence = req.body.sentence
+  const name = req.params.name
+  const num  = parseInt(req.params.num)
+  if (!num) num=1
+  const keys = utils.ecc.genKeys(sentence,num)
+  let wallet = new Wallet()
+  let response = []
+  let i=0
+  for (let key of keys){
+    let n=name+i.toString()
+    i++
+    wallet = await wallet.create(n,key.prvkey,key.pubkey)
+    response.push({
+        address:wallet.address,
+        prvkey:wallet.key.prvkey[0],
+        pubkey:wallet.key.pubkey[0]})
+  }
+  res.json(response)
+})
 ////////////// trade interface /////////////
 app.post('/trade',function(req,res,next){
   const script = req.body.script
@@ -562,8 +583,11 @@ app.get('/trade/:nameFrom/:nameTo/:amount',function(req,res,next){
 
 app.post('/trade/preNewTransaction',function(req,res,next){
   const inAddr = req.body.inAddr
-  const outAddr = req.body.outAddr
-  const amount   = parseFloat(req.body.amount)
+  let outAddr = req.body.outAddr
+  outAddr = outAddr.split(',')
+  let amount   = req.body.amount
+  amount = amount.split(',').map(x=>parseFloat(x))
+  if (amount.length==1) amount=amount[0]
   const script   = req.body.script
   let   assets   = req.body.assets
   const lockTime = parseInt(req.body.lockTime)
@@ -715,10 +739,8 @@ app.get('/getEntryNode/entryNodes',function(req,res){
 })
 
 app.get('/mine',function(req,res){
-  const t1=Transaction.newCoinbase(node.wallet.address)
-  const coinbase=JSON.parse(JSON.stringify(t1))
   //mine
-  node.mine(coinbase,(err,newBlock)=>{
+  node.mine((err,newBlock)=>{
     if(err) return res.send(err.message)
     if (config.debug)
       res.send(`<pre>${JSON.stringify(newBlock,null,4)}</pre>`)

@@ -106,12 +106,21 @@ class Block{
     
     //logger.debug(`${this.hash} is truly worked`)
     logger.debug("verify transaction data")
+    let txAmount=[]
     for (let transaction of this.data){
       console.log("transaction hash:",transaction.hash)
-      if (!transaction.isValid()) {
+      if (!transaction.isValid(txAmount)) {
         logger.error(`${this.hash} is not worked because of transaction is not valid`)
         return false
       }
+    }
+    //校验coinbase的交易费是否合法
+    let fee=0
+    if (txAmount.length>0)
+      fee = txAmount.map(x=>x.txInAmount - x.txOutAmount).reduce((x,y)=>x+y)
+    if (this.data[0].outs[1] && this.data[0].outs[1].amount > fee){
+      logger.error('矿工交易费设置不合法',this.data[0].outs[1].amount,fee)
+      return false
     }
     return true
   }

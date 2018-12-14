@@ -104,10 +104,10 @@ class BlockList extends React.Component{
       let txAmount=0
       for(var j=0;j<value[i].data.length;j++){
         const outs=value[i].data[j].outs
-        //for(var k=0;k<outs.length;k++){
-        //  txAmount += outs[k].amount
-        //}
-        txAmount += outs[0].amount
+        for(var k=0;k<outs.length;k++){
+          txAmount += outs[k].amount
+        }
+        //txAmount += outs[0].amount
       }
       //miner
       const miner = value[i].data[0].outs[0].outAddr

@@ -15,14 +15,15 @@ class TXin{
     if (!Array.isArray(this.pubkey)) this.pubkey=[this.pubkey]
     if (!Array.isArray(this.sign))   this.sign = [this.sign]
   }
-  canUnlockWith(){
+  canUnlockWith({signType,outsHash,prevTxAmount}){
     let prevTx = global.blockchain.findTransaction(this.prevHash)
     if (!prevTx.hash) return true //此方法仅为解决首次批量下载问题，目前尚未知更好的模式，过后修改
       
     let vout = prevTx.outs[this.index]
     let outAddr = vout.outAddr
     
-    //if (vout.lockTime >0 && new Date().getTime() < vout.lockTime) return false
+    //prevTxAmount是一个数组，目的是累积每一个amount，用于后续验证fee交易费是否正确
+    prevTxAmount.push({hash:this.prevHash,index:this.index,amount:vout.amount})
     
     if (vout.signNum && vout.signNum>this.pubkey.length){
       logger.warn(`需要签名校验的数量${vout.signNum}大于提供的公钥数量`)
@@ -34,18 +35,33 @@ class TXin{
       return false
     }
     //step2:verify not to be changed!!!!
+    logger.warn("canUnlockWith",outsHash)
     let signNum = 0 
     let isVerify=false
     for (let i=0 ;i<this.pubkey.length;i++){
-      if (utils.ecc.verify(
-            this.prevHash+this.index.toString()+this.inAddr,
-            this.sign[i],
-            this.pubkey[i])){
-        signNum++
-        if (signNum >= vout.signNum){
-          isVerify=true
-          logger.info(`[已验证了${vout.signNum}条签名]`)
-          break
+      if (signType=="all"){
+        if (utils.ecc.verify(
+              this.prevHash+this.index.toString()+this.inAddr+outsHash,
+              this.sign[i],
+              this.pubkey[i])){
+          signNum++
+          if (signNum >= vout.signNum){
+            isVerify=true
+            logger.info(`[已验证了${vout.signNum}条签名]`)
+            break
+          }
+        }
+      }else{
+        if (utils.ecc.verify(
+              this.prevHash+this.index.toString()+this.inAddr,
+              this.sign[i],
+              this.pubkey[i])){
+          signNum++
+          if (signNum >= vout.signNum){
+            isVerify=true
+            logger.info(`[已验证了${vout.signNum}条签名]`)
+            break
+          }
         }
       }
     }
@@ -66,6 +82,9 @@ class TXout{
     this.assets=args.assets   || {}
     if (this.script && !this.contractHash)
       this.contractHash = utils.hashlib.hash160(this.script)
+    //check type
+    if (typeof this.amount !="number") throw new Error("amount type is not number")
+    if (typeof this.outAddr != "string") throw new Error("outAddr type is not string")
   }
   canbeUnlockWith(address){
     if (this.outAddr != address) {
@@ -86,6 +105,7 @@ class Transaction{
       this.timestamp = new Date().getTime() 
     }
     this.lockTime = args.lockTime || 0
+    this.signType = args.signType || 'all'
     if (args.hash){
       this.hash=args.hash
     }else{
@@ -93,39 +113,77 @@ class Transaction{
     }
   }
   preHeaderString(){
-    return [JSON.stringify(this.ins),
+    let ins=[]
+    for (let item of this.ins){
+      let temp={...item}
+      temp.sign=[]
+      temp.pubkey=[]
+      ins.push(temp)
+    }
+    return [JSON.stringify(ins),
             JSON.stringify(this.outs),
             this.lockTime,
-            this.timestamp].join("")
+            this.timestamp,
+            this.signType].join("")
   }
   dumps(){
     return JSON.stringify(this)
   }
   isCoinbase(){
     return this.ins[0].index==-1
-  } 
-  isValid(){
-    if (this.isCoinbase())
-      return (this.insLen==1 && this.outsLen==1 && this.outs[0].amount<=global.REWARD)    
-    logger.debug("transaction","begin verify:",this.hash)
+  }
+  isValid(txAmount=[]){
+    logger.debug("transaction begin verify",this.hash)
+    if (this.isCoinbase()){
+      if (!(this.insLen==1 && this.outs[0].amount<=global.REWARD)){
+        logger.error("transaction verify","coinbase transaction reward error.")
+        return false
+      }
+      //check fee is coded in function block.isValid
+      return true
+    }
     if (utils.hashlib.sha256(this.preHeaderString())!=this.hash) {
-      logger.warn("交易内容与hash不一致")
+      logger.warn("transaction verify","交易内容与hash不一致")
       return false
     }
+    //验证lockTime合法性
+    if (this.lockTime!=0 && this.lockTime >= new Date().getTime()){
+      logger.warn("transaction verify","lockTime时期尚未到来")
+      return false
+    }
+    //验证每条输入
+    let signType = this.signType
+    let outsHash = utils.hashlib.sha256(JSON.stringify(this.outs))
+    //logger.error("isValid",outsHash)
+    let prevTxAmount=[]
     for (let idx=0;idx<this.ins.length;idx++){
       let vin = this.ins[idx]
-      if (!vin.canUnlockWith({})) return false
+      if (!vin.canUnlockWith({signType,outsHash,prevTxAmount})) return false
+      logger.warn("transaction verify",prevTxAmount)
     }
+    let txInAmount=0
+    if (prevTxAmount.length>0)
+      txInAmount = prevTxAmount.map(x=>x.amount).reduce((x,y)=>x+y)
+    let txOutAmount = this.outs.map(x=>x.amount).reduce((x,y)=>x+y)
+    if ( txInAmount < txOutAmount ){
+      logger.error("transaction verify","输入的金额小于输出的金额","txInAmount",txInAmount,"txOutAmount",txOutAmount)
+      return false
+    }
+    //txAmount的作用是供block.isValid函数判断coinbase交易的交易费是否合法
+    txAmount.push({hash:this.hash,txInAmount:txInAmount,txOutAmount:txOutAmount})
     return true
   }
-  static newCoinbase(outAddr){
+  static newCoinbase(outAddr,fee=0){
     let ins=[new TXin({"prevHash":"",
                        "index":-1,
                        "inAddr":""
                        })]
-    let outs=[new TXout({"amount":parseFloat(global.REWARD.toPrecision(12)),
-                         "outAddr":outAddr
-                        })]
+    let outs=[]
+    outs.push(new TXout(
+      {"amount":parseFloat(global.REWARD.toPrecision(12)),"outAddr":outAddr}))
+    if (fee > 0){
+      outs.push(new TXout({"amount":fee,"outAddr":outAddr}))
+    }
     return new Transaction({ins,outs})
   }
   static parseTransaction(data){
@@ -140,7 +198,8 @@ class Transaction{
     let hash=data["hash"]
     let timestamp=data["timestamp"]
     let lockTime = data["lockTime"]
-    return new Transaction({hash,timestamp,lockTime,ins,outs})
+    let signType = data["signType"]
+    return new Transaction({hash,timestamp,lockTime,signType,ins,outs})
   }
   static async newTransaction({inPrvkey,inPubkey,inAddr,outAddr,amount,utxo,script="",assets={},signNum=1,lockTime=0}){
     if (!Array.isArray(inPrvkey)) inPrvkey = [inPrvkey]
@@ -153,20 +212,48 @@ class Transaction{
         .catch(error=>reject(error))
     })
   }
-  static preNewTransaction({inAddr,outAddr,amount,utxo,script="",assets={},signNum,lockTime}){
+  static preNewTransaction({inAddr,outAddr,amount,fee=0,signType="all",utxo,script="",assets={},signNum,lockTime}){
+    let totalAll=0,otherFee=0,total=0,average=0
     if (amount<0) throw new Error("金额不能小于零")
+    if (Array.isArray(outAddr)){
+      if (Array.isArray(amount)){
+        outAddr.map((x,i)=>{
+          if (amount[i]) return
+          return amount.push(0) 
+        })
+        outAddr.length
+        otherFee = amount.reduce((x,y,i)=>{
+            if (i>outAddr.length) return x+y
+            return y
+          })
+        total = amount.reduce((x,y)=>x+y) - otherFee
+        fee = fee + otherFee
+      }else{
+        total   = amount
+        average = parseFloat((total / outAddr.length).toPrecision(12))
+        amount=[]
+        outAddr.map(x=>amount.push(average))
+      }
+    }else{
+      if (Array.isArray(amount)){
+        total = amount.reduce((x,y)=>x+y)
+      }else{
+        total   = amount
+      }
+    }
+    if (fee<0) throw new Error("交易费不能小于零")
     let ins=[]
     let outs=[]
     if (!outAddr)
       throw new Error("must define out address")
-    amount = parseFloat(amount.toPrecision(12))
-    let todo = utxo.findSpendableOutputs(inAddr,amount)
+    totalAll = parseFloat((total+fee).toPrecision(12))
+    let todo = utxo.findSpendableOutputs(inAddr,total)
     //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3","signNum":1},        
     //                         "2543543543":{"index":0,"amount":"2","signNum":2}
     //                        }
     //     }
     console.log("preNewTransaction",inAddr,todo)
-    if (todo["acc"] < amount){
+    if (todo["acc"] < totalAll){
       logger.warn(`${inAddr} not have enough money.`)
       throw new Error("not enough money.")
     }
@@ -177,40 +264,73 @@ class Transaction{
       let index = output["index"]
       ins.push({"prevHash":prevHash,
                 "index":index,
-                "inAddr":inAddr,
-                "sign":[]})
+                "inAddr":inAddr
+                })
       if (output["signNum"]>maxSignNum)
         maxSignNum = output["signNum"]    
     }
-    outs.push({"amount":amount,
-               "outAddr":outAddr,
+    if (Array.isArray(outAddr)){
+      outAddr.map((x,i)=>{
+        outs.push({"amount":amount[i],
+               "outAddr":outAddr[i],
                "signNum":signNum,
+               "contractHash":utils.hashlib.hash160(script),
                "script":script,
                "assets":assets
               })
-    if (todo["acc"] > amount){
-      outs.push({"amount":parseFloat((todo["acc"]-amount).toPrecision(12)),
+      })
+    }else{
+      outs.push({"amount":total,
+               "outAddr":outAddr,
+               "signNum":signNum,
+               "contractHash":utils.hashlib.hash160(script),
+               "script":script,
+               "assets":assets
+              })
+    }
+
+    if (todo["acc"] > totalAll){
+      outs.push({"amount":parseFloat((todo["acc"]-totalAll).toPrecision(12)),
                  "outAddr":inAddr,
                  "signNum":maxSignNum,  //????
+                 "contractHash":"",
                  "script":"",
                  "assets":{}
                  })
     }
-    return {rawIns:ins,rawOuts:outs,lockTime:lockTime}
+    const outsHash=utils.hashlib.sha256(JSON.stringify(outs))
+    logger.warn("preNewTransaction",outsHash)
+    return {rawIns:ins,rawOuts:outs,lockTime:lockTime,signType:signType,outsHash:outsHash}
   }
   
   static sign(inPrvkey,inPubkey,preNewTx){
+    //type = "all","none","sigle"
+    const  type = preNewTx.signType
     try{
       if (preNewTx.rawIns[0].index==-1) return preNewTx
       const rawIns=preNewTx.rawIns
-      for (let rawIn of rawIns){
-        let toSign=rawIn.prevHash+rawIn.index.toString()+rawIn.inAddr
-        let sign=[]
-        inPrvkey.map((key,i)=>{
-          return sign[i]=utils.ecc.sign(toSign,key)
-        })
-        rawIn.sign = sign
-        rawIn.pubkey = inPubkey
+      const rawOutsHash = utils.hashlib.sha256(JSON.stringify(preNewTx.rawOuts))
+      logger.warn("sign",utils.hashlib.sha256(rawOutsHash))
+      if (type=="all"){
+        for (let rawIn of rawIns){
+          let toSign=rawIn.prevHash+rawIn.index.toString()+rawIn.inAddr+rawOutsHash
+          let sign=[]
+          inPrvkey.map((key,i)=>{
+            return sign[i]=utils.ecc.sign(toSign,key)
+          })
+          rawIn.sign = sign
+          rawIn.pubkey = inPubkey
+        }
+      }else if (type=="none"){
+        for (let rawIn of rawIns){
+          let toSign=rawIn.prevHash+rawIn.index.toString()+rawIn.inAddr
+          let sign=[]
+          inPrvkey.map((key,i)=>{
+            return sign[i]=utils.ecc.sign(toSign,key)
+          })
+          rawIn.sign = sign
+          rawIn.pubkey = inPubkey
+        }
       }
     }catch(error){
       throw error
@@ -229,10 +349,11 @@ class Transaction{
         outs.push(new TXout(rawOut))
       }
       let lockTime = raw.lockTime
-      let TX = new Transaction({ins,outs,lockTime})
+      let signType = raw.signType
+      let TX = new Transaction({ins,outs,lockTime,signType})
       logger.warn("newRawTransaction",JSON.stringify(TX))
       let {...utxoSet} = utxo.utxoSet
-      if (! utxo.updateWithTX(TX,utxoSet)){
+      if (! utxo.updateWithTX(TX,utxoSet)){               
         return reject(new Error("double spend!!,Maybe not enough money."))
       }
       utxo.utxoSet = utxoSet
