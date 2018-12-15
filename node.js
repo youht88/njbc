@@ -1066,7 +1066,7 @@ class Node{
     this.mining = true
     //sync transaction from txPool
     let txPool = [] 
-    let fee=0
+    let fee=0,inamt=0,outamt=0
     let value = []
     await this.txPoolSync().then((txs)=>{
       for(let tx of txs){
@@ -1081,9 +1081,12 @@ class Node{
           outAmount += txOut.amount
         }
         value.push({inAmount,outAmount})
-        fee +=  inAmount - outAmount       
+        fee +=  inAmount - outAmount
+        inamt += inAmount
+        outamt += outAmount       
       }
     })
+    logger.warn("mine","fee,inamt,outamt",fee,inamt,outamt)
     let coinbase = Transaction.newCoinbase(this.wallet.address,fee)
     txPool.unshift(coinbase)
     

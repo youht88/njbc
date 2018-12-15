@@ -217,17 +217,24 @@ class UTXO{
     const utxoSet = this.findUTXO(address)
     for (let uhash in utxoSet){
       let outs = utxoSet[uhash]
+      unspend[uhash]=[]
       for (let out of outs){
         acc = acc + out["txout"].amount
-        unspend[uhash]={"index":out["index"],
+        unspend[uhash].push({"index":out["index"],
                         "amount":out["txout"].amount,
-                        "signNum":out["txout"].signNum}
+                        "signNum":out["txout"].signNum})
         if (acc >=amount)
           break
       }
       if (acc >= amount)
         break
     }
+    /*let a=0
+    for (let key in unspend){
+      a+=unspend[key].map(x=>x["amount"]).reduce((x,y)=>x+y)
+    }
+    logger.warn("findSpendableOutputs","totalAmount",a,"acc",acc,"want",amount)
+    */
     return {"acc":acc,"unspend":unspend}
   }
   getBalance(address){

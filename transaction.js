@@ -159,14 +159,15 @@ class Transaction{
     for (let idx=0;idx<this.ins.length;idx++){
       let vin = this.ins[idx]
       if (!vin.canUnlockWith({signType,outsHash,prevTxAmount})) return false
-      logger.warn("transaction verify",prevTxAmount)
     }
     let txInAmount=0
     if (prevTxAmount.length>0)
       txInAmount = prevTxAmount.map(x=>x.amount).reduce((x,y)=>x+y)
     let txOutAmount = this.outs.map(x=>x.amount).reduce((x,y)=>x+y)
+    logger.warn("transaction verify","txInAmount",txInAmount,"txOutAmount",txOutAmount)
     if ( txInAmount < txOutAmount ){
       logger.error("transaction verify","输入的金额小于输出的金额","txInAmount",txInAmount,"txOutAmount",txOutAmount)
+      console.log(prevTxAmount.map(x=>x.amount).join(","))
       return false
     }
     //txAmount的作用是供block.isValid函数判断coinbase交易的交易费是否合法
@@ -248,27 +249,32 @@ class Transaction{
       throw new Error("must define out address")
     totalAll = parseFloat((total+fee).toPrecision(12))
     let todo = utxo.findSpendableOutputs(inAddr,total)
-    //todo={"acc":3,"unspend":{"3453425125":{"index":0,"amount":"3","signNum":1},        
+    //todo={"acc":3,"unspend":{"3453425125":[{"index":0,"amount":"3","signNum":1},
+    //                                       {"index":1,"amount":"2","signNum":1}],                 
     //                         "2543543543":{"index":0,"amount":"2","signNum":2}
     //                        }
     //     }
-    console.log("preNewTransaction",inAddr,todo)
+    //console.log("preNewTransaction",inAddr,todo)
     if (todo["acc"] < totalAll){
       logger.warn(`${inAddr} not have enough money.`)
       throw new Error("not enough money.")
     }
     let maxSignNum=1
+    //ins
     for (let hash in todo["unspend"]){
       let output = todo["unspend"][hash]
       let prevHash = hash
-      let index = output["index"]
-      ins.push({"prevHash":prevHash,
-                "index":index,
-                "inAddr":inAddr
-                })
-      if (output["signNum"]>maxSignNum)
-        maxSignNum = output["signNum"]    
+      for (let item of output){
+        let index = item["index"]
+        ins.push({"prevHash":prevHash,
+                  "index":index,
+                  "inAddr":inAddr
+                  })
+        if (item["signNum"]>maxSignNum)
+          maxSignNum = item["signNum"]    
+      }
     }
+    //outs
     if (Array.isArray(outAddr)){
       outAddr.map((x,i)=>{
         outs.push({"amount":amount[i],
@@ -300,6 +306,13 @@ class Transaction{
     }
     const outsHash=utils.hashlib.sha256(JSON.stringify(outs))
     logger.warn("preNewTransaction",outsHash)
+    
+    /*let a=0
+    for (let key in todo["unspend"]){
+      a += todo["unspend"][key].map(x=>x["amount"]).reduce((x,y)=>x+y)
+    }
+    logger.warn("preNewTransaction",todo["acc"],a)
+    */
     return {rawIns:ins,rawOuts:outs,lockTime:lockTime,signType:signType,outsHash:outsHash}
   }
   
@@ -351,7 +364,7 @@ class Transaction{
       let lockTime = raw.lockTime
       let signType = raw.signType
       let TX = new Transaction({ins,outs,lockTime,signType})
-      logger.warn("newRawTransaction",JSON.stringify(TX))
+      //logger.warn("newRawTransaction",JSON.stringify(TX))
       let {...utxoSet} = utxo.utxoSet
       if (! utxo.updateWithTX(TX,utxoSet)){               
         return reject(new Error("double spend!!,Maybe not enough money."))
