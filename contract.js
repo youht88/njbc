@@ -133,6 +133,7 @@ class Contract{
       sandbox.hashlib = require('./utils.js').hashlib
       sandbox.bufferlib  = require('./utils.js').bufferlib
       sandbox.request = require('request')
+      sandbox.assert = require('assert')
       sandbox.emitter = new EventEmitter()
       sandbox.nowE8   = (timestamp=null,formatStr=null)=>{
         if (timestamp){
@@ -319,7 +320,7 @@ class Contract{
                   },(err2,result2)=>{
                     if (err2) return reject(err2)
                     resolve([result1,result2])
-                    logger.warn(`更新资源 ${JSON.stringify(assets)} 到 ${account.address}的交易已提交,txHash=${result}`)
+                    logger.warn(`更新资源 ${JSON.stringify(assets)} 到 ${account.address}的交易已提交,txHash=${[result1,result2]}`)
                 })
             })
           })

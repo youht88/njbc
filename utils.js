@@ -192,12 +192,42 @@ class ECC extends Crypto{
     return ecdh.computeSecret(Buffer.from(pubkey,"base64")).toString("base64")
   }
   getKeys(prvkey){
+    const bufferlib = new Bufferlib()
     const ecdh = crypto.createECDH(this.namedCurve)
-    ecdh.setPrivateKey(prvkey,"base64")
-    const keys=this.generateKeys()
-    //const pubkey = ecdh.getPublicKey("base64")
-    return {"prvkey":keys.prvkey,"pubkey":keys.pubkey}
+    prvkey = bufferlib.transfer(prvkey,"base64","hex")
+    ecdh.setPrivateKey(prvkey,"hex")
+    const pubkey = ecdh.getPublicKey("hex")
+    /*组装public key der,转换为base64
+    3056【sequence 类型 长度86】
+    3010【sequence 类型 长度16】
+    0607【OID类型 长度 07】
+    2a8648ce3d0201 【 OID value = "1.2.840.10045.2.1"=>{42,134,72,206,61,2,1}】
+    0605【OID类型 长度05】
+    2b8104000a【OID value = "1.3.132.0.10"=>{43,129,04,00,10}=>{0x 2b 81 04 00 0a}】
+    034200【bit string类型，长度66，前导00】
+    */
+    const pubkey_der="3056301006072a8648ce3d020106052b8104000a034200"+pubkey
+    /*组装private key der,转换为base64
+    3074【sequence类型，长度116】
+    0201【Integer类型，长度01】
+    01 【value=1 ，ecprivkeyVer1=1】
+    0420【byte类型，长度32】
+    ....【私钥】
+    a007【a0结构类型，长度07】
+    0605【OID类型，长度05】
+    2b8104000a【OID value named secp256k1 elliptic curve = 1.3.132.0.10 =>{43,129,04,00,10}=>{0x 2b 81 04 00 10}】
+    a144【a1结构类型，长度68】
+    034200【bitstring类型，长度66，前导00】
+   【0x 04开头的非压缩公钥】
+    */
+    const prvkey_der="30740201010420"+prvkey+
+                     "a00706052b8104000aa144034200"+pubkey
+  
+    return {"prvkey":bufferlib.transfer(prvkey_der,"hex","base64"),
+            "pubkey":bufferlib.transfer(pubkey_der,"hex","base64")}
   }
+
+
   genKeys(keyStr,num){
     if (!num) num=1
     const hashlib=new Hashlib()

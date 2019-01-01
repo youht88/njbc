@@ -280,7 +280,7 @@ class Transaction{
         outs.push({"amount":amount[i],
                "outAddr":outAddr[i],
                "signNum":signNum,
-               "contractHash":utils.hashlib.hash160(script),
+               "contractHash":script?utils.hashlib.hash160(script):"",
                "script":script,
                "assets":assets
               })
@@ -289,7 +289,7 @@ class Transaction{
       outs.push({"amount":total,
                "outAddr":outAddr,
                "signNum":signNum,
-               "contractHash":utils.hashlib.hash160(script),
+               "contractHash":script?utils.hashlib.hash160(script):"",
                "script":script,
                "assets":assets
               })

@@ -1,6 +1,7 @@
-FROM arm32v6/node:10.13-alpine
+#version v6
+#FROM arm32v6/node:10.13-alpine
 #FROM arm32v7/node:10.13-stretch
-#FROM node:10.13-alpine  
+FROM node:10.13-alpine  
 MAINTAINER youht
 
 RUN apk add curl --no-cache
@@ -46,5 +47,9 @@ RUN npm install node-dev -g
 RUN npm install vm2 --save-dev
 RUN npm install deepmerge --save
 RUN npm install base-x --save
+RUN npm install node-json2html
+
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /njbc
