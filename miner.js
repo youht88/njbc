@@ -16,7 +16,6 @@ const Node = require('./node.js').Node
 const Wallet = require('./wallet.js').Wallet
 const Contract = require('./contract.js').Contract
 const Transaction = require('./transaction.js').Transaction
-console.log("miner.js3",typeof Wallet,typeof Transaction)
 
 //define logger
 const logger = utils.logger.getLogger()
@@ -528,9 +527,11 @@ app.post('/wallet/create/:name/:num',async (req,res,next)=>{
   let wallet = new Wallet()
   let response = []
   let i=0
+  console.log(keys)
   for (let key of keys){
     let n=name+i.toString()
     i++
+    console.log(key)
     wallet = await wallet.create(n,key.prvkey,key.pubkey)
     response.push({
         address:wallet.address,
