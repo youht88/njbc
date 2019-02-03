@@ -1,3 +1,4 @@
+fs=require('fs')
 
 class GF{
   constructor(g=3,p=123479){
@@ -563,6 +564,7 @@ class ArrayBase{
       this.data = this.ensureArray(data)
     }
     this.length = this.data.length
+    this.shape = [this.length]
     this.T = this.data
     if (this.dtype == Complex){
       this.real = this.data.map(x=>x.real)
@@ -732,15 +734,26 @@ class ArrayBase{
     if (!Array.isArray(p)) p=[p]
     let [s,t,o]=p
     if (s==undefined) s=0
-    if (s<0) s=this.data.length + s
-    if (t==undefined) t=(s==0)?this.data.length:s+1
-    if (t<0) t=this.data.length + t
+    if (s<0) s=this.length + s
+    if (t==undefined) t=(s==0)?this.length:s+1
+    if (t<0) t=this.length + t
     if (o==undefined) o=1
     for (let i=s;i<t;i+=o){
       data.push(this.data[i])
     }
     return new Vector(data)
   }
+  take(p){
+    if (!Array.isArray(p)) p=[p]
+    return new Vector(p.map(n=>{
+       if (n>this.length-1) throw new Error(`${n} 超过向量边界`)
+       return this.data[n]
+      }))
+  }
+  save(file){
+    return fs.writeFileSync(file,this.data)
+  }
+
 }
 class Vector extends ArrayBase{
   ensureValid(a){
@@ -807,6 +820,7 @@ class Matrix{
     this._row = data.length
     this._col = data[0].length
     this.size = this._row*this._col
+    this.shape = [this._row,this._col]
     if (args.T){
       this.T = args.T.map(t=>new Vector(t,this.dtype))
     }else{
@@ -1200,6 +1214,19 @@ class Matrix{
   clip(m,n){
     return new Matrix(this.data.map((item)=>item.clip(m,n)))
   }
+  
+  take(p,axis=null){
+    if (axis==null) return new Vector(this.flatten().take(p))
+    let matrix = new Matrix((axis==0?this.T:this.data).map(x=>x.take(p)))
+    if (axis==1) return matrix
+    return matrix.transpose()
+  }
+  
+  save(file){
+    let data=this.value()
+    let str = data.join(';')
+    return fs.writeFileSync(file,str)
+  }
 }
   
 class Numpy{
@@ -1278,7 +1305,12 @@ class Numpy{
   }
   mat(str,dtype){
     let data=str.split(";")
-    let arr = data.map(x=>x.replace(/\s+/g,",").split(",").map(x=>parseFloat(x)))
+    let arr = data.map(x=>x.replace(/\s+/g,",").split(",").map(x=>{
+        let d=parseFloat(x)
+        if (d!=NaN) return d
+        return x
+      }))
+    if (arr.length==1) arr=arr[0]
     return this.array(arr,dtype)
   }
   __reset(value,dtype,shape=1,...args){
@@ -1611,6 +1643,21 @@ class Numpy{
     a=this.ensureNdarray(a)
     if (a instanceof Vector) return a.slice(k[0])
     if (a instanceof Matrix) return a.slice(k[0],k[1])
+  }
+  
+  take(a,p,axis){
+    a=this.ensureNdarray(a)
+    if (a instanceof Vector) return a.take(p)
+    if (a instanceof Matrix) return a.take(p,axis)
+  }
+  
+  save(file,a){
+    a=this.ensureNdarray(a)
+    return a.save(file)
+  }
+  load(file){
+    let data=fs.readFileSync(file,"utf8")
+    return this.mat(data)
   }
 }
 
