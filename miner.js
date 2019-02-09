@@ -527,11 +527,9 @@ app.post('/wallet/create/:name/:num',async (req,res,next)=>{
   let wallet = new Wallet()
   let response = []
   let i=0
-  console.log(keys)
   for (let key of keys){
     let n=name+i.toString()
     i++
-    console.log(key)
     wallet = await wallet.create(n,key.prvkey,key.pubkey)
     response.push({
         address:wallet.address,
@@ -777,6 +775,7 @@ app.get('/syncOverallChain',function(req,res){
 app.post('/run/script',async function(req,res){
   const script = req.body.script || ""
   const inAddr = req.body.inAddr || ""
+  console.log("???????????",script,inAddr)
   let contract
   try{
     contract = new Contract({inAddr,script})

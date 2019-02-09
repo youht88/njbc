@@ -571,7 +571,7 @@ class ArrayBase{
       this.imag = this.data.map(x=>x.imag)
     }else{
       this.real = this.data
-      this.imag = new this.dtype(this.real.length)
+      this.imag = new Float32Array(this.real.length)
     }
   }
   ensureArray(data){
@@ -591,12 +591,61 @@ class ArrayBase{
      return Array.isArray(data) && data || new this.dtype(data)
     }
   }
+  cast(dtype){
+    if (dtype != Complex){
+      switch (dtype.toUpperCase()){
+        case "INTEGER": dtype=Int32Array;break
+        case "INT": dtype=Int32Array;break
+        case "FLOAT"  : dtype=Float32Array;break;
+        case "STRING" : dtype=String;break;      
+        case "STR" : dtype=String;break;      
+        case "BOOLEAN": dtype=Boolean;break;      
+        case "BOOL": dtype=Boolean;break;      
+      }
+    }
+    return new Vector(this.data.map(item=>{
+      if (dtype == Complex)    return new Complex(item)
+      if (dtype==Int32Array)   return parseInt(typeof(item)=="boolean"?(item?1:0):item)
+      if (dtype==Float32Array) return parseFloat(typeof(item)=="boolean"?(item?1:0):item)
+      if (dtype == String)         return String(item)      
+      if (dtype == Boolean)        return Boolean(item)
+      throw new Error("类型转换定义不合法")
+    }),dtype)
+  }
   // In-place mapper.
   map(mapper) {
     let value = this.data.map((value,i,n)=>mapper(value, i, n));
     this.data = value
     return this;
   }
+  
+  sin(){return new Vector(this.data.map(x=>Math.sin(x)))}
+  cos(){return new Vector(this.data.map(x=>Math.cos(x)))}
+  tan(){return new Vector(this.data.map(x=>Math.tan(x)))}
+  asin(){return new Vector(this.data.map(x=>Math.asin(x)))}
+  acos(){return new Vector(this.data.map(x=>Math.acos(x)))}
+  atan(){return new Vector(this.data.map(x=>Math.atan(x)))}
+  asinh(){return new Vector(this.data.map(x=>Math.asinh(x)))}
+  acosh(){return new Vector(this.data.map(x=>Math.acosh(x)))}
+  atanh(){return new Vector(this.data.map(x=>Math.atanh(x)))}
+  sinh(){return new Vector(this.data.map(x=>Math.sinh(x)))}
+  cosh(){return new Vector(this.data.map(x=>Math.cosh(x)))}
+  tanh(){return new Vector(this.data.map(x=>Math.tanh(x)))}
+  log(){return new Vector(this.data.map(x=>Math.log(x)))}
+  log2(){return new Vector(this.data.map(x=>Math.log2(x)))}
+  log10(){return new Vector(this.data.map(x=>Math.log10(x)))}
+  exp(){return new Vector(this.data.map(x=>Math.exp(x)))}
+  sqrt(){return new Vector(this.data.map(x=>Math.sqrt(x)))}
+  square(){return new Vector(this.data.map(x=>Math.pow(x,2)))}
+  pow(n){return new Vector(this.data.map(x=>Math.pow(x,n)))}
+  around(n){return new Vector(this.data.map(x=>{
+      let a=10**n
+      return Math.round(x*a)/a
+    }))
+  }
+  floor(){return new Vector(this.data.map(x=>Math.floor(x)))}
+  ceil(){return new Vector(this.data.map(x=>Math.ceil(x)))}
+
   add(x){
     x=this.ensureValid(x)
     if (this.dtype == Complex){
@@ -639,33 +688,34 @@ class ArrayBase{
   sub(x){return this.subtract(x)}
   mul(x){return this.multiply(x)}
   div(x){return this.divide(x)}
+  neg(){return this.mul(-1)}
   
   reciprocal(){return new Vector(this.data.map((item,idx)=>1/item))}
   sign(){return new Vector(this.data.map((item,idx)=>item>=0?1:-1))}
 
   gt(x){
     x=this.ensureValid(x)
-    return new Vector(this.data.map((item,idx)=>item>(x.data?x.data[idx]:x)?true:false))
+    return new Vector(this.data.map((item,idx)=>item>(x.data?x.data[idx]:x)?true:false),Boolean)
   }
   gte(x){
     x=this.ensureValid(x)
-    return new Vector(this.data.map((item,idx)=>item>=(x.data?x.data[idx]:x)?true:false))
+    return new Vector(this.data.map((item,idx)=>item>=(x.data?x.data[idx]:x)?true:false),Boolean)
   }
   lt(x){
     x=this.ensureValid(x)
-    return new Vector(this.data.map((item,idx)=>item<(x.data?x.data[idx]:x)?true:false))
+    return new Vector(this.data.map((item,idx)=>item<(x.data?x.data[idx]:x)?true:false),Boolean)
   }
   lte(x){
     x=this.ensureValid(x)
-    return new Vector(this.data.map((item,idx)=>item<=(x.data?x.data[idx]:x)?true:false))
+    return new Vector(this.data.map((item,idx)=>item<=(x.data?x.data[idx]:x)?true:false),Boolean)
   }
   eq(x){
     x=this.ensureValid(x)
-    return new Vector(this.data.map((item,idx)=>item==(x.data?x.data[idx]:x)?true:false))
+    return new Vector(this.data.map((item,idx)=>item==(x.data?x.data[idx]:x)?true:false),Boolean)
   }
   ne(x){
     x=this.ensureValid(x)
-    return new Vector(this.data.map((item,idx)=>item!=(x.data?x.data[idx]:x)?true:false))
+    return new Vector(this.data.map((item,idx)=>item!=(x.data?x.data[idx]:x)?true:false),Boolean)
   }
   close(x){
     x=this.ensureValid(x)
@@ -673,11 +723,15 @@ class ArrayBase{
         let data=(x.data?x.data[idx]:x)
         return Math.abs(item-data)<=(1e-05+1e-08*data)?true:false
       })
-    )
+    ,Boolean)
   }
  
   sort(){return new Vector([...this.data].sort())}
-   
+  normal(N){
+    if (N==undefined) N=[0,1]
+    let [mu,sigma]=N
+    return this.sub(this.mean()).div(this.std()).mul(sigma).add(mu)
+  }
   sum(){return this.data.reduce((a,b)=>a+b)}
   min(){return this.data.reduce((a,b)=>a>b?b:a)}
   argmin(){return this.data.indexOf(this.min())}
@@ -713,12 +767,6 @@ class ArrayBase{
     x=this.ensureValid(x)
     return this.data.map((item,idx)=>item*(x.data?x.data[idx]:x)).reduce((i,j)=>i+j)
   }
-  norm(){
-    return Math.sqrt(this.data.map(a=>a*a).reduce((a,b)=>a+b))
-  }
-  //normalize(){
-  //  return this.dot(1/this.norm())
-  //}
   clip(m,n){
     return this.data.map(x=>{
       let a=m,b=n,c=x
@@ -753,7 +801,31 @@ class ArrayBase{
   save(file){
     return fs.writeFileSync(file,this.data)
   }
-
+  
+  pad(s,mode="constant",v){
+    if (!v) v=[0,0]
+    if (typeof v == "number") v=[v,v]
+    if (typeof s == "number") s=[s,s]
+    let [x,y]=s
+    let value
+    let data=[]
+    switch (mode){
+      case "constant":
+        value=0;break;
+      case "mean":
+        value=this.mean();break;
+      case "maximum":
+        value=this.max();break;
+      case "minimum":
+        value=this.min();break;
+      default:
+        value=0
+    }
+    for (let i=0;i<x;i++) data.push(mode=="constant"?v[0]:value)
+    data=data.concat(this.data)
+    for (let i=0;i<y;i++) data.push(mode=="constant"?v[1]:value)
+    return new Vector(data)
+  }
 }
 class Vector extends ArrayBase{
   ensureValid(a){
@@ -792,12 +864,11 @@ class Vector extends ArrayBase{
   }
   print(){console.log(this.data)}
   __func(fun,args){
-    console.log(args,...args)
     return this.data.map(value=>fun(value,...args))
   }
   copy(){return new Vector(this.value(),this.dtype)}
       
-  distance(x,y){
+  /*distance(x,y){
     if (!Array.isArray(x) || !Array.isArray(y)){
       throw new Error("有参数不是数组")
     }
@@ -809,6 +880,7 @@ class Vector extends ArrayBase{
     }
     return this.dp(x,y)/(this.norm(x)*this.norm(y))
   }
+  */
 }
 class Matrix{
   //a=[1,2]
@@ -840,6 +912,8 @@ class Matrix{
   }
   reshape(r,c){
     return this.flatten().reshape(r,c)
+  }
+  cast(dtype){return new Matrix(this.data.map((item,idx)=>item.cast(dtype)),dtype)
   }
   ensureValid(a){
     if (typeof a =="number") return a
@@ -882,6 +956,7 @@ class Matrix{
         if (s<0) s=x.data.length + s
         if (t==undefined) t=(s==0)?x.data.length:s+1
         if (t<0) t=x.data.length + t
+        if (t>x.data.length) t=x.data.length
         if (o==undefined) o=1
         for (let i=s;i<t;i+=o){
           data.push(x.data[i])
@@ -898,6 +973,7 @@ class Matrix{
         if (s<0) s=x.data.length + s
         if (t==undefined) t=(s==0)?x.data.length:s+1
         if (t<0) t=x.data.length + t
+        if (t>x.data.length) t=x.data.length
         if (o==undefined) o=1
         for (let i=s;i<t;i+=o){
           data.push(x.data[i])
@@ -939,6 +1015,29 @@ class Matrix{
 
   copy(){return new Matrix(this.value(),this.dtype)}
   
+  sin(){return new Matrix(this.data.map(x=>x.sin()))}
+  cos(){return new Matrix(this.data.map(x=>x.cos()))}
+  tan(){return new Matrix(this.data.map(x=>x.tan()))}
+  asin(){return new Matrix(this.data.map(x=>x.asin()))}
+  acos(){return new Matrix(this.data.map(x=>x.acos()))}
+  atan(){return new Matrix(this.data.map(x=>x.atan()))}
+  asinh(){return new Matrix(this.data.map(x=>x.asinh()))}
+  acosh(){return new Matrix(this.data.map(x=>x.acosh()))}
+  atanh(){return new Matrix(this.data.map(x=>x.atanh()))}
+  sinh(){return new Matrix(this.data.map(x=>x.sinh()))}
+  cosh(){return new Matrix(this.data.map(x=>x.cosh()))}
+  tanh(){return new Matrix(this.data.map(x=>x.tanh()))}
+  log(){return new Matrix(this.data.map(x=>x.log()))}
+  log2(){return new Matrix(this.data.map(x=>x.log2()))}
+  log10(){return new Matrix(this.data.map(x=>x.log10()))}
+  exp(){return new Matrix(this.data.map(x=>x.exp()))}
+  sqrt(){return new Matrix(this.data.map(x=>x.sqrt()))}
+  square(){return new Matrix(this.data.map(x=>x.square()))}
+  pow(n){return new Matrix(this.data.map(x=>x.pow(n)))}
+  around(n){return new Matrix(this.data.map(x=>x.around(n)))}
+  floor(){return new Matrix(this.data.map(x=>x.floor()))}
+  ceil(){return new Matrix(this.data.map(x=>x.ceil()))}
+
   add(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.add(x.data?x.data[idx]:x)),this.dtype)}
   subtract(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.subtract(x.data?x.data[idx]:x)),this.dtype)}
   multiply(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.multiply(x.data?x.data[idx]:x)),this.dtype)}
@@ -949,23 +1048,37 @@ class Matrix{
   sub(x){return this.subtract(x)}
   mul(x){return this.multiply(x)}
   div(x){return this.divide(x)}
+  neg(){return this.mul(-1)}
   
   reciprocal(){return new Matrix(this.data.map((item,idx)=>item.reciprocal()),this.dtype)}
   sign(){return new Matrix(this.data.map((item,idx)=>item.sign()),this.dtype)}
   
-  gt(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.gt(x.data?x.data[idx]:x)))}
-  gte(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.gte(x.data?x.data[idx]:x)))}
-  lt(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.lt(x.data?x.data[idx]:x)))}
-  lte(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.lte(x.data?x.data[idx]:x)))}
-  eq(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.eq(x.data?x.data[idx]:x)))}
-  ne(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.ne(x.data?x.data[idx]:x)))}
-  close(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.close(x.data?x.data[idx]:x)))}
+  gt(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.gt(x.data?x.data[idx]:x)),Boolean)}
+  gte(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.gte(x.data?x.data[idx]:x)),Boolean)}
+  lt(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.lt(x.data?x.data[idx]:x)),Boolean)}
+  lte(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.lte(x.data?x.data[idx]:x)),Boolean)}
+  eq(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.eq(x.data?x.data[idx]:x)),Boolean)}
+  ne(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.ne(x.data?x.data[idx]:x)),Boolean)}
+  close(x){x=this.ensureValid(x);return new Matrix(this.data.map((item,idx)=>item.close(x.data?x.data[idx]:x)),Boolean)}
   
   sort(axis=null){
     if (axis==null) return new Vector(this.flatten().sort())
-    return new Matrix((axis==0?this.T:this.data).map(x=>x.sort()))
+    let matrix = new Matrix((axis==0?this.T:this.data).map(x=>x.sort()))
+    if (axis==1) return matrix
+    return matrix.transpose()
   }
-
+  normal(axis=0,N){
+    if (axis==3){
+      if (N==undefined) N=[0,1]
+      let [mu,sigma]=N
+      let mu0= this.mean()
+      let sigma0 = this.std()
+      return new Matrix(this.data.map(x=>x.sub(mu0).div(sigma0).mul(sigma).add(mu)))
+    }
+    let matrix = new Matrix((axis==0?this.T:this.data).map(x=>x.normal(N)))
+    if (axis==1) return matrix
+    return matrix.transpose()
+  }
   sum(axis=null){
     if (axis==null) return this.flatten().sum()
     return new Vector((axis==0?this.T:this.data).map(x=>x.sum()))
@@ -1065,11 +1178,6 @@ class Matrix{
     return new Vector((axis==0?this.T:this.data).map(x=>x.average()))
   }
 
-  norm(axis=null){
-    if (axis==null) return this.flatten().norm()
-    return new Vector((axis==0?this.T:this.data).map(x=>x.norm()))
-  }
-  
   allclose(x){return this.close(x).all()}
   all(axis=null){
     if (axis==null) return this.flatten().all()
@@ -1097,8 +1205,60 @@ class Matrix{
       throw new Error(`矩阵(${np.shape(this)})和(${np.shape(a)})横向合并，行数不符合要求`)
     return new Matrix(this.data.map((x,i)=>x.data.concat(a.data[i].data)),this.dtype)
   }
-  vsplit(m,n){return a.vsplit(m,n)}
-  hsplit(m,n){return a.hsplit(m,n)}
+  split(m,axis=1){
+    if (axis==1) return this.hsplit(m)
+    if (axis==0) return this.vsplit(m)
+    throw new Error("必须制定axis为0-纵向分割，1-横向分割,默认axis=1")
+  }
+  vsplit(m){
+    let n=[]
+    let matrix=[]
+    if (typeof m =="number"){
+      let range = this._row 
+      let fromIndex=0
+      let count = m
+      for(let idx=0;idx<count;idx++){
+        let end=Math.ceil(range * (idx+1) / count) - 1 + fromIndex
+        let start =Math.ceil( range * idx / count) +1 - 1 + fromIndex
+        //console.log(`${idx}:${start}-${end},有${end-start+1}个元素`)
+        matrix.push(this.slice([start,end+1]))
+       }
+    }else{
+      let start=0
+      matrix=m.map(end=>{
+        let temp = this.slice([start,end])
+        start = end
+        return temp
+      })
+      matrix.push(this.slice([start,this._row]))
+    }
+    return matrix
+  }
+  
+  hsplit(m){
+    let n=[]
+    let matrix=[]
+    if (typeof m =="number"){
+      let range = this._col 
+      let fromIndex=0
+      let count = m
+      for(let idx=0;idx<count;idx++){
+        let end=Math.ceil(range * (idx+1) / count) - 1 + fromIndex
+        let start =Math.ceil( range * idx / count) +1 - 1 + fromIndex
+        //console.log(`${idx}:${start}-${end},有${end-start+1}个元素`)
+        matrix.push(this.slice([],[start,end+1]))
+       }
+    }else{
+      let start=0
+      matrix=m.map(end=>{
+        let temp = this.slice([],[start,end])
+        start = end
+        return temp
+      })
+      matrix.push(this.slice([],[start,this._col]))
+    }
+    return matrix  
+  }
 
   dot(a){
     let b
@@ -1227,11 +1387,49 @@ class Matrix{
     let str = data.join(';')
     return fs.writeFileSync(file,str)
   }
+  
+  pad(s,mode="constant",v){
+    if (typeof s=="number") s=[[s,s],[s,s]]
+    if (typeof s[0]=="number") s[0]=[s[0],s[0]]
+    if (typeof s[1]=="number") s[1]=[s[1],s[1]]
+    if (!v) v=[0,0]
+    if (typeof v=="number") v=[v,v]
+    let value,value1
+    switch (mode){
+      case "constant":
+        value=np.zeros(this._col);break;
+      case "mean":
+        value=this.mean(0);
+        v=this.mean();
+        break;
+      case "maximum":
+        value=this.max(0);
+        v = this.max();
+        break;
+      case "minimum":
+        value=this.min(0);
+        v = this.min();
+        break;
+      default:
+        value=np.zeros(this._col)
+    }
+    let f,d=[]
+    let data=this.data
+    f=value.pad([s[0][1],s[1][1]],"constant",v)
+    for (let i=0;i<s[0][0];i++) d.push(f)
+    d = d.concat(data.map(x=>x.pad([s[0][1],s[1][1]],mode,v)))
+    for (let i=0;i<s[1][0];i++) d.push(f)
+
+    return new Matrix(d)   
+  }
 }
   
 class Numpy{
   constructor(){
-    this.fft = new MyFFT()
+    this.Complex = Complex
+    this.fft = new FFT()
+    this.nn = new NN()
+    this.random = new Random()
   }
   Complex(r,j){
     let c=[]
@@ -1255,6 +1453,10 @@ class Numpy{
     if (ndim==1) 
       return new Matrix([a],dtype)
     return new Matrix(a,dtype)
+  }
+  cast(a,dtype){
+    a=this.ensureNdarray(a);
+    return a.cast(dtype)
   }
   ndim(a){
     if (a instanceof Vector) return 1
@@ -1362,11 +1564,6 @@ class Numpy{
         return (i%n==parseInt(i/n))?args[0][i%n]:0
       },dtype,new Array(len,len),array)
   }
-  random(shape,dtype){//随机矩阵
-    return this.__reset((i,args)=>{
-        return Math.random()
-      },dtype,shape)
-  }
     
   array(data,dtype){
     dtype = dtype || Float32Array
@@ -1421,15 +1618,32 @@ class Numpy{
   sin(object){return this.__func(Math.sin,this.ensureNdarray(object))}
   cos(object){return this.__func(Math.cos,this.ensureNdarray(object))}
   tan(object){return this.__func(Math.tan,this.ensureNdarray(object))}
+  asin(object){return this.__func(Math.asin,this.ensureNdarray(object))}
+  acos(object){return this.__func(Math.acos,this.ensureNdarray(object))}
+  atan(object){return this.__func(Math.atan,this.ensureNdarray(object))}
+  asinh(object){return this.__func(Math.asinh,this.ensureNdarray(object))}
+  acosh(object){return this.__func(Math.acosh,this.ensureNdarray(object))}
+  atanh(object){return this.__func(Math.atanh,this.ensureNdarray(object))}
+  sinh(object){return this.__func(Math.sinh,this.ensureNdarray(object))}
+  cosh(object){return this.__func(Math.cosh,this.ensureNdarray(object))}
+  tanh(object){return this.__func(Math.tanh,this.ensureNdarray(object))}
   log(object){return this.__func(Math.log,this.ensureNdarray(object))}
   log2(object){return this.__func(Math.log2,this.ensureNdarray(object))}
   log10(object){return this.__func(Math.log10,this.ensureNdarray(object))}
   exp(object){return this.__func(Math.exp,this.ensureNdarray(object))}
   sqrt(object){return this.__func(Math.sqrt,this.ensureNdarray(object))}
+  square(object){return this.__func((data)=>{
+      return Math.pow(data,2)
+    },this.ensureNdarray(object))}
+  pow(object,n){return this.__func((data,n)=>{
+      return Math.pow(data,n)
+    },this.ensureNdarray(object),n)
+  }
   around(object,n){return this.__func((data,n)=>{
       let a=10**n
       return Math.round(data*a)/a
-    },this.ensureNdarray(object),n)}
+    },this.ensureNdarray(object),n)
+  }  
   floor(object){return this.__func(Math.floor,this.ensureNdarray(object))}
   ceil(object){return this.__func(Math.ceil,this.ensureNdarray(object))}
   
@@ -1502,6 +1716,7 @@ class Numpy{
   sub(a,b){return this.subtract(a,b)}
   mul(a,b){return this.multiply(a,b)}
   div(a,b){return this.divide(a,b)}
+  neg(a){return this.mul(a,-1)}
   
   gt(a,b){[a,b]=this.ensureValid(a,b); return a.gt(b)}
   gte(a,b){[a,b]=this.ensureValid(a,b);return a.gte(b)}
@@ -1519,15 +1734,39 @@ class Numpy{
   transpose(a){a=this.ensureMatrix(a);return a.transpose()}
   vstack(a,b){[a,b]=this.ensureMatrix(a,b);return a.vstack(b)}
   hstack(a,b){[a,b]=this.ensureMatrix(a,b);return a.hstack(b)}
-  vsplit(a,m,n){a=this.ensureMatrix(a);return a.vsplit(m,n)}
-  hsplit(a,m,n){a=this.ensureMatrix(a);return a.hsplit(m,n)}
+  vsplit(a,m){a=this.ensureMatrix(a);return a.vsplit(m)}
+  hsplit(a,m){a=this.ensureMatrix(a);return a.hsplit(m)}
+  split(a,m,axis){a=this.ensureMatrix(a);return a.split(m,axis)}
   
-  nonzero(){}
-  where(){}
-  extract(){}
+  where(a,x,y){
+    if (x==undefined && y==undefined){
+      a=this.ensureNdarray(a).cast("boolean")
+      if (a instanceof Matrix){
+        let result1=[]
+        a.data.map((t,i)=>np.where(t).map(s=>result1.push([i,s])))
+        return result1
+      }
+      let result=[]
+      a.data.map((t,i)=>{if (t) result.push(i)})
+      return result
+    }if (x!=undefined && y!=undefined){
+      a=this.ensureNdarray(a).cast("boolean")
+      if (a instanceof Matrix)
+        return new Matrix(a.data.map(t=>np.where(t,x,y)),Float32Array)
+      return new Vector(a.data.map(t=>t?x:y),Float32Array)
+    }else{
+      throw new Error("x,y必须同时提供，或同时为空")
+    }
+  }
+  nonzero(a){a=this.ensureNdarray(a);return this.where(a.ne(0))}
   
   sort(x,axis){x=this.ensureNdarray(x);return x.sort(axis)}
-  
+  normal(x,axis,N){
+    x=this.ensureNdarray(x);
+    if (x instanceof Vector)
+      return x.normal(axis)
+    return x.normal(axis,N)
+  }
   sum(x,axis){x=this.ensureNdarray(x);return x.sum(axis)}
   min(x,axis){x=this.ensureNdarray(x);return x.min(axis)}
   argmin(x,axis){x=this.ensureNdarray(x);return x.argmin(axis)}
@@ -1540,17 +1779,16 @@ class Numpy{
   median(x,axis){x=this.ensureNdarray(x);return x.median(axis)}
   percentile(x,p,axis){x=this.ensureNdarray(x);return x.percentile(p,axis)}
   average(x,axis){x=this.ensureNdarray(x);return x.average(axis)}
-  
-  norm(x,axis){x=this.ensureNdarray(x);return x.norm(axis)}
-  
+    
   allclose(a,b){[a,b]=this.ensureValid(a,b);return a.allclose(b)}
   all(x,axis){x=this.ensureNdarray(x);return x.all(axis)}
   any(x,axis){x=this.ensureNdarray(x);return x.any(axis)}
   
   dot(a,b){
-    
     [a,b]=this.ensureNdarray(a,b);return a.dot(b)
   }
+  matmul(a,b){return this.dot(a,b)}
+  
   det(a){a=this.ensureMatrix(a);return a.det()}
   inv(a){a=this.ensureMatrix(a);return a.inv()}
   solve(a,b){[a,b]=this.ensureMatrix(a,b);return a.solve(b)}
@@ -1659,9 +1897,63 @@ class Numpy{
     let data=fs.readFileSync(file,"utf8")
     return this.mat(data)
   }
+  
+  pad(a,s,mode,v){a=this.ensureNdarray(a);return a.pad(s,mode,v)}
 }
 
-class MyFFT{
+class Random{
+  constructor(){
+  }
+  random(shape,dtype){//随机矩阵
+    return this.dim.__reset((i,args)=>{
+        return Math.random()
+      },dtype,shape)
+  }
+  rand(shape,dtype){return this.random(shape,dtype)}
+  randint(range,shape,dtype){
+    //range may be a number or a array like as [m,n]
+    return dim.__reset((i,args)=>{
+        let range=args[0]
+        if (typeof range=="number") range=[0,range]
+        let [m,n]=range
+        return parseInt(Math.random()*(n-m)+m)
+      },dtype,shape,range)
+  }
+  randn(shape,dtype){//正态分布
+    let v=dim.__reset((i,args)=>{
+        return Math.random()
+      },dtype,shape)
+    return v.sub(v.mean()).div(v.std())
+  }
+  normal([mu,sigma],shape,dtype){//随机矩阵
+    let v=this.randn(shape,dtype)
+    return v.mul(sigma).add(mu)
+  }
+  choice(a,n){
+    if (typeof a == "number") {
+      let t=[]
+      for (let i=0;i<a;i++) t.push(i);
+      a=t 
+    }
+    a=dim.ensureVector(a)
+    return this.shuffle(a.data).slice(0,n)
+  }
+  shuffle(aArr){
+    var iLength = aArr.length,
+      i = iLength,
+      mTemp,
+      iRandom;
+    while(i--){
+      if(i !== (iRandom = Math.floor(Math.random() * iLength))){
+        mTemp = aArr[i];
+        aArr[i] = aArr[iRandom];
+        aArr[iRandom] = mTemp;
+      }
+    }
+    return aArr;
+  }
+}
+class FFT{
   rader(a){ // 二进制平摊反转置换 O(logn)  
     let len = a.length
     let j = len >>1
@@ -1729,6 +2021,303 @@ class MyFFT{
   fftfreq(){}
   //fft(a,n,axis=0){}
 }
+
+class NN{
+  constructor(){
+    this.random=new Random()
+  }
+  //Classification Function
+  softmax(a){
+    a=np.ensureVector(a);
+    let exp = np.exp(a)
+    let sum = exp.sum()
+    return new Vector(a.data.map((x,i)=>exp.data[i]/sum))
+  }
+  crossEntropy(a,y){
+    [a,y]=np.ensureNdarray(a,y)
+    return np.mean(np.sum(
+                    y.mul(np.log(a)).neg().add(
+                      y.sub(1).mul(
+                          np.log(a.neg().add(1))
+                        )
+                      )
+                    )
+                  )
+  }
+
+  //Activation Function
+  relu(a){
+    a=np.ensureNdarray(a);
+    if (a instanceof Matrix)
+      return new Matrix(a.data.map(x=>np.nn.relu(x)))
+    return new Vector(a.data.map(x=>x<=0?0:x))
+  }
+  relu6(a){
+    a=np.ensureNdarray(a);
+    if (a instanceof Matrix)
+      return new Matrix(a.data.map(x=>np.nn.relu6(x)))
+    return new Vector(a.data.map(x=>x<=0?0:(x>6?6:x)))
+  }
+  softplus(a){
+    a=np.ensureNdarray(a);
+    if (a instanceof Matrix)
+      return new Matrix(a.data.map(x=>np.nn.softplus(x)))
+    return new Vector(a.data.map(x=>Math.log(Math.exp(x)+1)))
+  }
+  sigmoid(a){
+    a=np.ensureNdarray(a);
+    if (a instanceof Matrix)
+      return new Matrix(a.data.map(x=>np.nn.sigmoid(x)))
+    return new Vector(a.data.map(x=>1/(1+Math.exp(-x))))
+  }
+  tanh(a){
+    a=np.ensureNdarray(a);
+    //also equal tanh=sinhx/conhx=(Math.exp(x)-Math.exp(-x))/(Math.exp(x)+Math.exp(-x))
+    if (a instanceof Matrix)
+      return new Matrix(a.data.map(x=>np.nn.tanh(x)))
+    return new Vector(a.data.map(x=>Math.tanh(x)))
+  }
+  tanhDeriv(a){
+    a=np.ensureNdarray(a);
+    return  a.tanh().square().neg().add(1)
+  }
+  sigmoidDeriv(a){
+    a=np.ensureNdarray(a);
+    return this.sigmoid(a).mul((this.sigmoid(a).neg().add(1)))
+  }
+  dropout(a,keep){
+    a=np.ensureNdarray(a);
+    if (keep<=0 || keep>1) throw new Error("keep_prob参数必须属于(0,1]")
+    if (a instanceof Matrix)
+      return new Matrix(a.data.map(x=>np.nn.dropout(x,keep)))
+    let remain=a.length*keep
+    let arr=[]
+    for (let i=0;i<a.length;i++) arr.push(i)
+    arr = this.random.shuffle(arr)
+    arr = arr.slice(0,remain)
+    return new Vector(a.data.map((x,i)=>(arr.indexOf(i)>=0)?x/keep:0))
+  }
+  
+  //Pool Function
+  maxPool(a){}
+  avgPool(a){}
+  meanPool(a){}
+ 
+  //Loss Function
+  MSE(a,y){
+    //also named L2
+    [a,y]=np.ensureNdarray(a,y)
+    return np.square(a.sub(y)).mean()*0.5
+  }
+  logcosh(a,y){
+    [a,y]=np.ensureNdarray(a,y)
+    return np.log(np.cosh(a.sub(y))).sum()
+  }
+
+  //cnn function
+  conv2d(input, filter, strides, padding){
+  
+  }
+  
+}
+
+class V{
+  constructor(object){
+    this.data=object
+    this.ndim=this.getNdim()
+    this.shape=this.getShape()
+    this.size=this.shape.reduce((a,b)=>a*b)
+    this.T=this.getT()
+  }
+  getNdim(){
+    let i=0
+    let a=this.data
+    while (Array.isArray(a)){
+      i++
+      a=a[0].data?a[0].data:a[0]
+    }
+    return i
+  }
+  getShape(){
+    let shape=[]
+    let data=this.data
+    for (let i=0;i<this.ndim;i++){
+      shape.push(data.length)
+      data=data[0].data
+    }
+    return shape
+  }
+  getT(){}
+  value(){
+    return this.data.map((x,i)=>(x instanceof V)?x.value():x)
+  }
+  ensureSameShape(a){
+    if (this.shape!=a.shape) throw new Error(`形状(${this.shape})与形状(${a.shape})不一致`)
+  }
+  flatten(item){
+    if (!item) item=[]
+    this.data.map((x,i)=>(x instanceof V)?x.flatten(item):item.push(x))
+    //console.log(item)
+    return new Vector(item)
+  }
+  reshape(...d){
+    if (Array.isArray(d[0])) d=d[0]
+    let a=this.flatten().data
+    let t,p=[],plen=0
+    plen=d[d.length - 1]
+    if (this.size%plen!=0) 
+      throw new Error(`尺寸为(${this.size})的数组无法匹配形状(${d})`)
+    for (let i=0;i<this.size;i+=plen){
+      p.push(a.slice(i,i+plen))
+    }
+    t=p
+    let size = this.size / plen
+    for (let i=d.length - 2 ;i>0;i--){
+      if (size%d[i]!=0) throw new Error(`尺寸为(${this.size})的数组无法匹配形状(${d})`)
+      size = size/d[i]
+      t=[]
+      for (let j=0;j<size;j++){
+        t.push(p.slice(j*d[i],j*d[i]+d[i]))
+      }
+      p=[...t]
+    }
+    if (size!=d[0]) throw new Error(`尺寸为(${this.size})的数组无法匹配形状(${d})`)
+    return dim.ensureVector(t)
+  }
+  transpose(axes){}
+  add(a){
+    this.ensureSameShape(a)
+    return new V(this.data.map((x,i)=>(x instanceof V)?x.add(a.data[i]):x+a.data[i]))
+    /*
+      let data=this.data.map((x,i)=>{
+        if (x instanceof A) return x.add(a.data[i])
+        return x+a.data[i]
+      })
+      return new A(data)
+    */
+  }
+  sub(a){
+    this.ensureSameShape(a)
+    return new V(this.data.map((x,i)=>(x instanceof V)?x.sub(a.data[i]):x-a.data[i]))
+  }
+  sin(){
+    return new V(this.data.map((x,i)=>(x instanceof V)?x.sin():Math.sin(x)))
+  }
+  pow(n){
+    return new V(this.data.map((x,i)=>(x instanceof V)?x.pow(n):Math.pow(x,n)))
+  }
+  sum(axis=null){
+    return this.data.map((x,i)=>(x instanceof V)?x.sum():x).reduce((a,b)=>a+b)
+  }
+}
+class Dim{
+  constructor(){
+    this.Vector = V
+    this.random = new Random()
+  }
+  ensureVector(a,dtype){
+    if (a instanceof this.Vector) return a
+    if (Array.isArray(a)) {
+      if (Array.isArray(a[0])){
+        return new this.Vector(a.map(x=>this.ensureVector(x)))
+      }else {
+        return new this.Vector(a)
+      }
+    }
+    if (typeof a=="number") {
+      let r=[]
+      for (let i=0;i<a;i++) r.push(0)
+      return new this.Vector(r)
+    }
+  }
+  array(a,dtype){return this.ensureVector(a,dtype)}
+  arange(start,end,step,dtype){
+    if (typeof end=="function"){
+      dtype = end
+      end = null
+      step = null
+    }
+    if (!end) {
+      end = start
+      start = 0
+    }
+    if (!step) {
+      step = 1
+    }
+    let arr=[]
+    for (let i=start;i<end;i+=step){
+      arr.push(i)
+    }
+    return this.array(arr,dtype)
+  }
+  linspace(start,end,num,dtype){
+    if (typeof end == "function"){
+      dtype = end
+      num = start
+      start = 0
+      end = num
+    }
+    let step = (end - start ) / num
+    let arr=[]
+    for (let i=0;i<num;i++){
+      arr.push(start)
+      start +=step
+    }
+    return this.array(arr,dtype)
+  }
+  mat(str,dtype){
+    let data=str.split(";")
+    let arr = data.map(x=>x.replace(/\s+/g,",").split(",").map(x=>{
+        let d=parseFloat(x)
+        if (d!=NaN) return d
+        return x
+      }))
+    if (arr.length==1) arr=arr[0]
+    return this.array(arr,dtype)
+  }
+  __reset(value,dtype,shape=1,...args){
+    let arr=[]
+    if (typeof shape=="number") shape=[shape,shape]
+    let size=shape.reduce((a,b)=>a*b)
+    for (let i=0;i<size;i++){
+      if (typeof value=="function"){
+        if (dtype==Complex){
+          arr.push(new Complex(value(i,args),value(i,args)))
+        }else {
+          arr.push(value(i,args))
+        }
+      }else{
+        if (dtype==Complex){
+          arr.push(new Complex(value))
+        }else{
+          arr.push(value)
+        }
+      }
+    }
+    return this.array(arr,dtype).reshape(shape)
+  }
+  zeros(shape=1,dtype){
+    return this.__reset(0,dtype,shape)
+  }
+  ones(shape=1,dtype){
+    return this.__reset(1,dtype,shape)
+  }
+  eye(number,dtype){//对角矩阵
+    return this.__reset((i,args)=>{
+        let n=args[0]
+        return (i%n==parseInt(i/n))?1:0
+      },dtype,number,number)
+  }
+  diag(array,dtype){//自定义对角阵
+    let len=array.length
+    return this.__reset((i,args)=>{
+        let n=args[0].length
+        return (i%n==parseInt(i/n))?args[0][i%n]:0
+      },dtype,len,array)
+  }
+
+}
+exports.dim = new Dim()
 
 exports.gf      = new GF()
 exports.np      = new Numpy()
