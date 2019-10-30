@@ -51,7 +51,7 @@ class Wallet{
     return new Promise((resolve,reject)=>{
       global.db.findMany("wallet",{"address":address}).then(accounts=>{
         if (accounts.length==0)
-          return  reject (new Error("no such account address."))
+          return  reject (new Error(`no such account address ${address}`))
         if (accounts.length >1)
           return reject (new Error(`multi account addressed ${address}`))
         let account = accounts[0]

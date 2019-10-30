@@ -1135,7 +1135,7 @@ class Node{
   async findNonce(blockDict){
     return new Promise((resolve,reject)=>{
       console.time("mine")
-      const p = fork('./findNonce.js')
+      const p = fork('../findNonce.js')
       this.miningPid = p.pid
       p.on('message',function(data){
         let newBlock = new Block(data)

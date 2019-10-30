@@ -386,22 +386,29 @@ class Bufferlib{
 class MySet{
   
   union(a,b){
+    if (!Array.isArray(a)) a=[a]
+    if (!Array.isArray(b)) b=[b] 
     let c = new Set([...a, ...b]);
     return [...c];
   }
   difference(a,b){
+   if (!Array.isArray(a)) a=[a]
+   if (!Array.isArray(b)) b=[b] 
    let m = new Set([...a])
    let n = new Set([...b])
    let c = new Set([...m].filter(x => !n.has(x)));
    return [...c];
   }
   intersect(a,b){
+    if (!Array.isArray(a)) a=[a]
+    if (!Array.isArray(b)) b=[b]
     let m = new Set([...a])
     let n = new Set([...b])
     let c = new Set([...m].filter(x => n.has(x)));//ES6
     return [...c];
   }
   removeRepeat(a){
+    if (!Array.isArray(a)) a=[a]
     let c = new Set([...a]);
     return [...c];
   }

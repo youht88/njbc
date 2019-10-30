@@ -41,7 +41,7 @@ program
   .option('-e, --entryNode <s>','indicate which node to entry,e.g. ip|host:port ')
   .option('--me <s>','indicate who am I,e.g. ip|host:port')
   .option('--httpServer <s>','default httpServer is 0.0.0.0:4000')
-  .option('--entryKad <s>','entry node of kad,ip:port')
+  .option('--entryKad <s>','entry node of kad,ip:port,default entryKad is 0.0.0.0:3000')
   .option('--db <s>','db connect,ip:port/db')
   .option('--display <s>','display  of node')
   .option('--syncNode','sync node')
@@ -116,9 +116,9 @@ function syncConfigFile(args){
   args.syncNode = config.syncNode
     
   console.log(args)
-  if (!(args.me && args.entryNode && args.entryKad && 
-        args.db && args.httpServer ))
-    throw Error("you must define me,entryNode,entryKad,db,httpServer arguments")               
+  if (!(args.me && args.entryNode && 
+        args.db ))
+    throw Error("you must define me,entryNode,db arguments")               
   
   fs.writeFileSync("config.json",JSON.stringify(config,null,space=4))
   return config
