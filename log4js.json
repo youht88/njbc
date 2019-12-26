@@ -1,0 +1,26 @@
+{
+  "appenders" : 
+    { "miner": { 
+        "type": "file",
+        "filename": "logs/miner.log" ,
+        "maxLogSize": 2000000 ,
+        "layout" : {
+          "type":"pattern",
+          "pattern": "%[[%d] [%p] [%c]%] %m"
+        }
+      } ,
+      "console":{
+        "type": "console",
+        "layout" : {
+          "type":"pattern",
+          "pattern": "%[%d-%p-%c:%m%]"
+        }
+      }
+    },
+  "categories": { 
+      "default": { 
+        "appenders": ["miner","console"], 
+        "level": "trace"
+        }
+  } 
+}

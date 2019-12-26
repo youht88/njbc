@@ -41,7 +41,7 @@ program
   .option('-e, --entryNode <s>','indicate which node to entry,e.g. ip|host:port ')
   .option('--me <s>','indicate who am I,e.g. ip|host:port')
   .option('--httpServer <s>','default httpServer is 0.0.0.0:4000')
-  .option('--entryKad <s>','entry node of kad,ip:port,default entryKad is 0.0.0.0:3000')
+  .option('--ipfsServer <s>','default ipfsServer is localhost:5001')
   .option('--db <s>','db connect,ip:port/db')
   .option('--display <s>','display  of node')
   .option('--syncNode','sync node')
@@ -54,7 +54,7 @@ const args = {
   "entryNode"  : program.entryNode,
   "me"         : program.me,
   "httpServer" : program.httpServer,
-  "entryKad"   : program.entryKad,
+  "ipfsServer" : program.ipfsServer,
   "db"         : program.db,
   "display"    : program.display,
   "syncNode"   : program.syncNode,
@@ -87,9 +87,9 @@ function syncConfigFile(args){
     config.httpServer=args.httpServer
   args.httpServer = config.httpServer
   
-  if (args.entryKad)
-    config.entryKad=args.entryKad
-  args.entryKad = config.entryKad
+  if (args.ipfsServer)
+    config.ipfsServer=args.ipfsServer
+  args.ipfsServer = config.ipfsServer
   
   if (args.db)
     config.db=args.db
@@ -117,8 +117,8 @@ function syncConfigFile(args){
     
   console.log(args)
   if (!(args.me && args.entryNode && 
-        args.db ))
-    throw Error("you must define me,entryNode,db arguments")               
+        args.db && args.ipfsServer))
+    throw Error("you must define me,entryNode,db,ipfsServer arguments")               
   
   fs.writeFileSync("config.json",JSON.stringify(config,null,space=4))
   return config
@@ -130,7 +130,7 @@ const config = syncConfigFile(args)
 global.REWARD = 2.0
 global.BLOCK_PER_HOUR = 3*60  //每小时出块数限制
 global.ADJUST_DIFF=100   //每多少块调整一次难度
-global.ZERO_DIFF = 5*4
+global.ZERO_DIFF = 1*4
 global.NUM_FORK = 6
 global.TRANSACTION_TO_BLOCK = 0
 global.SYNC_BLOCKCHAIN = 10*1000*60  //多少毫秒同步blockchain
@@ -145,13 +145,18 @@ const start= async ()=>{
     "config":config,
     "httpServer":args.httpServer,
     "entryNode":args.entryNode,
-    "entryKad":args.entryKad,
+    "ipfsServer":args.ipfsServer,
     "me":args.me,
     "db":args.db,
     "display":args.display,
     "ioServer":ioServer,
     "ioClient":ioClient
   })
+  //连接ipfs
+  await node.ipfsConnect()
+  console.log(node.ipfs)
+  node.initIpfs()
+
   node.initEvents()
 
   //链接数据库

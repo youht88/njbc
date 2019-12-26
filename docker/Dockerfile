@@ -32,7 +32,7 @@ RUN npm install echarts --save
 
 RUN echo {presets:[\'env\',\'react\']} > .babelrc
 
-#some
+
 RUN npm install jquery underscore moment --save
 RUN npm install socket.io socket.io-client --save
 RUN npm install express body-parse --save 
@@ -51,5 +51,7 @@ RUN npm install node-json2html
 
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN npm install ipfs-http-client --save
 
 WORKDIR /njbc

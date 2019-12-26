@@ -11,6 +11,9 @@ const http = require('http');
 const querystring = require('querystring');
 const url  = require('url')
 
+//ipfs
+const ipfsClient = require('ipfs-http-client')
+
 // Math constants and functions we need.
 const PI = Math.PI;
 const SQRT1_2 = Math.SQRT1_2;
@@ -719,6 +722,82 @@ class MyHttp{
     })
   }
 }
+class Ipfs {
+  constructor(){
+    this.client = {}    
+    this.url = ""
+    this.room = {}
+    this.id=null
+    this.peers=[]
+  }
+  async init(connectStr){
+    return new Promise((resolve,reject)=>{
+      try{
+        let url
+        let ido
+        this.url = connectStr
+        this.client = ipfsClient(this.url)
+        let pGetId = this.getId().then(ido=>{
+          this.id = ido.id
+        })
+        let pGetPeers = this.getPeers().then(x=>{
+          this.peers = x.map(y=>y.peer._idB58String)
+        })
+        Promise.all([pGetId,pGetPeers])
+          .then(x=>resolve(this))
+          .catch(e=>{console.log(e);reject(e)})
+      }catch(e){
+        reject(e)
+      }
+    })
+  }
+  roomSet(key,id){
+    if (!Array.isArray(id)) id=[id]
+    this.room[key] = new Set([...id])
+  }
+  roomAdd(key,id){
+    if (!Array.isArray(id)) id=[id]
+    if (this.room[key]==undefined){
+      this.room[key] = new Set([...id])
+    }else{
+      id.map(x=>this.room[key].add(x))
+    }
+  }
+  roomDel(key,id){
+    if (!Array.isArray(id)) id=[id]
+    if (this.room[key]==undefined){
+      return
+    }else{
+      id.map(x=>this.room[key].delete(x))
+    }
+  }
+  async getId(){
+     return this.client.id()
+  }
+  async getPeers(){
+    return this.client.swarm.peers()
+  }
+  async add(data){
+    let bdata
+    if (!Buffer.isBuffer(data)){
+      bdata = Buffer.from(JSON.stringify(data))
+    }else{
+      bdata = data
+    }
+    return this.client.add(bdata)
+  }
+  async cat(cid){
+    return this.client.cat(cid)
+  }
+  async pub(topic,data){
+    let bdata = Buffer.from(JSON.stringify(data))
+    return this.client.pubsub.publish(topic,bdata)
+  }
+  async sub(topic,receiveMsg){
+    return this.client.pubsub.subscribe(topic,receiveMsg)
+  }
+}
+
 exports.obj2json = function(obj){
   return JSON.parse(JSON.stringify(obj))
 }
@@ -731,3 +810,4 @@ exports.logger  = new Logger()
 exports.set     = new MySet()
 exports.db      = new DB()
 exports.http    = new MyHttp()
+exports.ipfs    = new Ipfs()

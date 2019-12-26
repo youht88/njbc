@@ -547,14 +547,31 @@ class Chain{
     console.log("total amount",amount)
     return amount
   }
-  async findContractAssets({contractHash,key=null,toAddr=null,list=false}){
+  async findContractTransaction({contractHash,fromAddr=null}){
+     const contract = this.findContract(contractHash)
+     if (!contract) return {}
+     let result = []
+     this.findThingsByCond({},(block,TX)=>{
+       if (block.index==contract.blockIndex){
+         return false
+       }
+       if (TX.outs[0].outAddr == contract.contractAddr){
+          if (!fromAddr || TX.ins[0].inAddr == fromAddr){
+            result.push(TX)
+          }
+       }
+       return true 
+     })
+     return result
+  }
+  async findContractAssets({contractHash,key=null,fromAddr=null,list=false}){
     const contract = this.findContract(contractHash)
     if (!contract) return {}
     let assets = await this.findAssets({
          key:key,
          fromIndex:contract.blockIndex,
-         fromAddr:contract.contractAddr,
-         toAddr :toAddr,
+         fromAddr: fromAddr,
+         toAddr :contract.contractAddr,
          list   :list
       })
     return assets
@@ -563,9 +580,9 @@ class Chain{
     //正序合并所有fromAddr输出给toAddr(如无toAddr则表示不限定)的assets数据资源
     console.log("...",toAddr,fromAddr)
     let account
-    if (toAddr && !Wallet.isAddress(toAddr)){
-      account = await new Wallet(toAddr).catch(error=>{return error})
-      toAddr = account.address
+    if (fromAddr){
+      account = await new Wallet(fromAddr).catch(error=>{return error})
+      fromAddr = account.address
     }
     let assets = {}
     let newAssets
@@ -574,7 +591,7 @@ class Chain{
       if ((!toAddr || tx.outs[0].outAddr == toAddr) && 
           (!fromAddr || tx.ins[0].inAddr == fromAddr)){
         if (typeof tx.outs[0].assets == "string") { //加密
-          if (toAddr){
+          if (fromAddr){
             try{
               newAssets = JSON.parse(utils.ecc.deCipher(tx.outs[0].assets,account.key.prvkey[0]))
             }catch(err){

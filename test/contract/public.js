@@ -1,28 +1,55 @@
+assets:
+{"title":"通用合约1.1.5"}
 //通用合约封装
+version("1.1.5")
+contract = new Contract()
 class Cta{
-  constructor(){
-      this.contract = new Contract()
+  constructor(appName){
+    this.appName = appName
+    this.args = null
+  }
+  init(args){
+    if (this.args) throw new Error("合约已经被初始化!")
+    this.args = args
+  }
+  onlyInit(){
+    if (!this.args) throw new Error("合约还没有被初始化!")
+  }
+  onlyOwner(caller){
+    if (caller != contract.owner) throw new Error(`[${caller}]必须是创建者[${contract.owner}]才能调用该函数!`)
   }
   sayHello(msg){
-     return `hello ${msg}!!!!!`
+     this.onlyInit()
+     return `hello ${msg},this is app {${this.appName}}!!!!!`
+  }
+  showContract(){
+    return contract
   }
   async set (data,caller,amount,crypt=false){
-     return this.contract.set(data,caller,amount,crypt)
+     this.onlyInit()
+     if (!caller) throw new Error("caller不能为空!")
+     if (Array.isArray(this.args.allowAddress)){
+        if (!this.args.allowAddress.includes(caller)){
+          throw new Error(`[${caller}]不在许可地址列表[${this.args.allowAddress}]中`)
+        }
+     }
+     return contract.set(data,caller,amount,crypt)
   }
   async get(key=null,inAddr=null,list=false){
-     return this.contract.get(key,inAddr,list)
+     this.onlyInit()
+     return contract.get(key,inAddr,list)
   }
   async getBalance(address){
-      return this.contract.getBalance(address)
+      return contract.getBalance(address)
   }
   async getBalancePaid(address){
-     return this.contract.getBalancePaid(address)
+     return contract.getBalancePaid(address)
   }
   async payTo(address,amount,assets){
-    return this.contract.payTo(address,amount,assets)
+    return contract.payTo(address,amount,assets)
   }
   async getAccount(address){
-    return this.contract.getAccount(address)
+    return contract.getAccount(address)
   }
   getStock(code,start,end){
     if (!end) end=start
@@ -38,7 +65,7 @@ class Cta{
     })
   }
 }
-instance = new Cta()
+instance = new Cta("test1")
 return instance
 
 1、

@@ -20,7 +20,7 @@ class Node{
     this.httpServer = args.httpServer
     this.me         = args.me
     this.entryNode  = args.entryNode
-    this.entryKad   = args.entryKad
+    this.ipfsServer   = args.ipfsServer
     this.db         = args.db
     this.display    = args.display
     this.peers      = args.peers
@@ -63,7 +63,58 @@ class Node{
     
     this.process=[this.blockProcess,this.minerProcess]
   }
-  
+ 
+  async ipfsConnect(){
+    this.ipfs = await utils.ipfs.init(this.ipfsServer)
+  }
+  initIpfs(){
+      //ipfs sub newBlock
+      this.ipfs.sub("newBlock",(msg)=>{
+        let data = JSON.parse(msg.data.toString()) 
+        logger.debug(`[newBlock recieve],${data.index}-${data.nonce}`)
+        this.emitter.emit("newBlock",data)
+      })
+      //ipfs sub newTransaction
+      this.ipfs.sub("newTransaction",(msg)=>{
+        let data = JSON.parse(msg.data.toString()) 
+        logger.debug(`[newTransaction recieve],${data.hash}`)
+        this.emitter.emit("newTransaction",data)
+      })
+      //ipfs sub registeNode
+      this.ipfs.sub("registeNode",(msg)=>{
+        let data = JSON.parse(msg.data.toString()) 
+        logger.debug(`[registeNode recieve],${data}`)
+        this.emitter.emit("registeNode",data)
+      })
+      //ipfs sub getNodeInfo
+      this.ipfs.peers.map(peer=>{
+          this.ipfs.sub(peer+"/getNodeInfo",(msg)=>{
+          let from = msg.from
+          logger.error(`[getNodeInfo recieve],${peer},${from}`)
+          let nodeInfo = this.getNodeInfo()
+          this.ipfs.pub(from+"/getNodeInfoAck",nodeInfo)
+        })
+      })
+      this.ipfs.sub(this.ipfs.id+"/getNodeInfoAck",(msg)=>{
+        let data = JSON.parse(msg.data.toString()) 
+        logger.error(`[GetNodeInfoAck],${msg.from},${data["wallet.address"]},${data["wallet.balance"]},${data["blockchain.maxindex"]}-${data["blockchain.maxindex.nonce"]}`)
+      })
+      //ipfs sub getBlocks
+      this.ipfs.peers.map(peer=>{
+          this.ipfs.sub(peer+"/getBlocks",(msg)=>{
+          let data = JSON.parse(msg.data.toString()) 
+          let from = msg.from
+          logger.error(`[getBlock recieve],${peer},${from},${data.start}-${data.end}`)
+          let blocks = this.getBlocks(data)
+          this.ipfs.pub(from+"/getBlocksAck",blocks)
+        })
+      })
+      this.ipfs.sub(this.ipfs.id+"/getBlocksAck",(msg)=>{
+        let data = JSON.parse(msg.data.toString()) 
+        logger.error(`[GetBlocksAck],${data}`)
+      })
+  }
+
   initEvents(){
     this.emitter.on("test",()=>console.log(1234))
     this.emitter.on("mined",(blockDict)=>{
@@ -171,6 +222,39 @@ class Node{
         })
     })
     
+    global.emitter.on("ipfsCat",(cid,cb)=>{
+      this.ipfs.cat(cid)
+        .then((data)=>{
+            logger.warn("从ipfs取得数据",data)
+            if (cb){
+              cb(null,data)
+            }
+          })
+        .catch((error)=>{
+            logger.warn("ipfs取数据错误",error)
+            if (cb){
+              cb(error,null)
+            }
+            throw error
+          })
+    })
+    
+    global.emitter.on("ipfsAdd",(data,cb)=>{
+      this.ipfs.add(data)
+        .then((cid)=>{
+            logger.warn("向ipfs增加数据的cid",cid)
+            if (cb){
+              cb(null,cid)
+            }
+          })
+        .catch((error)=>{
+            if (cb){
+              cb(error,null)
+            }
+            throw error
+          })
+    })
+
     this.emitter.once("start",async ()=>{
       //syncNode
       if (this.config.syncNode){
@@ -212,7 +296,10 @@ class Node{
       //await
       await this.syncOverallChain(this.config.full).then(bestIndex=>{
         logger.fatal("bestIndex:",bestIndex,"blockchain:",this.blockchain.maxindex())
-      }).catch(err=>{console.log(err.stack)})
+      }).catch(err=>{
+         console.log(err.stack)
+         process.exit()
+      })
       
       logger.warn("start2","resetUTXO")      
       
@@ -714,7 +801,7 @@ class Node{
     logger.debug("step1:get around node info")
     const nodesInfo = await this.getARpcNodeInfo()
     if (nodesInfo.length==0)  return "unknown"
-    logger.debug("step1.11111",nodesInfo)
+    logger.debug("step1.",nodesInfo)
     //确定具有最长链的节点组
     toIndex = fromIndex + 1 
     let otherIndex=0
@@ -731,7 +818,26 @@ class Node{
       }        
     })
     if (bestNodes.length==0) return otherIndex 
-    logger.debug("step2.22222")
+    logger.debug("step2.",fromIndex,toIndex,bestNodes)
+    let startIndex=fromIndex
+    let stage=0
+    let promiseArray=[]
+    do {
+       stage++
+       let endIndex = startIndex+3000
+       if (endIndex>toIndex){
+          endIndex=toIndex
+       }
+       await promiseArray.push(this.download(startIndex,endIndex,bestNodes,stage)) 
+       startIndex=endIndex+1
+    }while(startIndex<toIndex)
+    console.log(promiseArray)
+    const result = await Promise.all(promiseArray).then(()=>console.log("完成同步"))
+    logger.debug("step3:wait blockPoolSync to build a bestChain")
+    return toIndex
+  }
+    
+  async download(fromIndex,toIndex,bestNodes,stage){
     //开始分配下载
     let range = toIndex - fromIndex + 1
     let count = bestNodes.length
@@ -767,9 +873,7 @@ class Node{
         }))
       }
     }
-    const result = await Promise.all(promiseArray).then(()=>console.log("完成同步"))
-    logger.debug("step3:wait blockPoolSync to build a bestChain")
-    return toIndex
+    const result = await Promise.all(promiseArray).then(()=>console.log(`完成${stage}阶段同步${fromIndex}-${toIndex}`))
   }
   async syncToBlockPool(fromIndex,toIndex){
     return new Promise((resolve,reject)=>{
@@ -1202,6 +1306,8 @@ class Node{
       this.socketioClient.emit("broadcast",message)
     }
     this.ioServer.emit("broadcast",message)
+
+    //this.ipfs.pub(type,data)    
   }
   
 }

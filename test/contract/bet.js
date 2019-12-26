@@ -1,13 +1,20 @@
+version("0.1.1")
 const contract = new Contract()
 class Bet{
-  constructor(amount,date,code,value){
+  constructor(amount,date,code,price){
+    this.amount = null
+    this.date = null
+    this.code = null
+    this.price = null
+  }
+  get(key,list){
+    return contract.get(key,null,list)
+  }
+  setBet(amount,date,code,price){
     this.amount = amount
     this.date = date
     this.code = code
-    this.value = value
-  }
-  get(key,toAddr,list){
-    return contract.get(key,toAddr,list)
+    this.price = price
   }
   getBalance(){
     return contract.getBalance()
@@ -16,7 +23,7 @@ class Bet{
     if (!end) end=start
     let url =`http://q.stock.sohu.com/hisHq?code=cn_${code}&start=${start}&end=${end}`
     return ajax(url).then(x=>{
-      let res = JSON.parse(x)   
+      let res = JSON.parse(x)
       if (Array.isArray(res)){
         if (res[0].status==0)
            return res[0].hq
@@ -26,7 +33,7 @@ class Bet{
     })
   }
   getBet(){
-    return `我押${this.amount}个币，打赌${this.date}股票代码${this.code}收盘价超过${this.value}元(含等于）！`
+    return `我押${this.amount}个币，打赌${this.date}股票代码${this.code}收盘价超过${this.price}元(含等于）！`
   }
   getAmount(){
     return this.amount
@@ -34,8 +41,8 @@ class Bet{
   verify(){
     return this.getStock(this.code,this.date).then(x=>{
       try{
-        let value = parseFloat(x[0][2])
-        return (value>=this.value)
+        let price = parseFloat(x[0][2])
+        return (price>=this.price)
       }catch(error){
         throw error
       }
@@ -87,9 +94,13 @@ class Bet{
     }
   }
 }
-const bet = new Bet(100,'20181129','600825',6.36)
+const bet = new Bet()
 return bet
 
+//////////////
+bet = getInstance('7a206736b13c15c13e755eef35eb80e355035c6a')
+bet.setBet(5,"20191115","300096",10.55)
+return bet
 
 //////////////
 cta = getInstance('7a206736b13c15c13e755eef35eb80e355035c6a')

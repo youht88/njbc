@@ -1,5 +1,6 @@
 const fs=require('fs')
 const moment  = require('moment')
+const deepmerge = require("deepmerge")
 const async = require("async")
 const utils = require("./utils.js")
 const logger = utils.logger.getLogger()
@@ -129,11 +130,12 @@ class Contract{
     let that = this
     try{
       sandbox.async   = require("async")
-      sandbox.crypto  = require('./utils.js').crypto
+      sandbox.crypto  = require('./utils.js').ecc
       sandbox.hashlib = require('./utils.js').hashlib
       sandbox.bufferlib  = require('./utils.js').bufferlib
       sandbox.request = require('request')
       sandbox.assert = require('assert')
+      sandbox.deepmerge = deepmerge
       sandbox.emitter = new EventEmitter()
       sandbox.nowE8   = (timestamp=null,formatStr=null)=>{
         if (timestamp){
@@ -225,7 +227,11 @@ class Contract{
           this.version    = (args)?args.version   :that.version
           this.caller     = (args)?args.caller    :that.caller
         }
-      
+        onlyOwner(){
+          if (this.caller != this.owner) {
+            throw new Error(`caller is ${this.caller},but it's not contract owner ${this.owner}`)
+          }
+        }
         getBlock(indexOrHash){
           try{
             if (typeof(indexOrHash)=="string"){
@@ -245,6 +251,9 @@ class Contract{
         }
         getTransaction(hash){
           return blockchain.findTransaction(hash)
+        }
+        getContractTransaction(fromAddr=null){
+          return blockchain.findContractTransaction({contractHash:this.contractHash,fromAddr:fromAddr})
         }
         async getTxPool(){
           return Transaction.getTxPool()
@@ -296,43 +305,96 @@ class Contract{
         }
         async set(assets={},caller=null,amount=0,encrypt=false,lockTime=0){
           return new Promise(async (resolve,reject)=>{
-            if (that.caller && !caller) caller = that.caller
-            if (!caller)  return reject(new Error("必须指定caller地址"))
-            let account = await new Wallet(caller).catch(error=>{return reject(error)})
-            if (encrypt) {
-              assets = utils.ecc.enCipher(assets,account.key.prvkey[0])
+            if (caller.address){ //如果定义caller:{address,sign,pubkey}则忽略amount、encrypt
+              //验证address是否在许可列表
+              if (Array.isArray(this.assets.allowAddress)) {
+                  if (! this.assets.allowAddress.includes(caller.address)){
+                     reject (new Error("用户地址不在许可列表中！"))
+                     return 
+                  }
+              }
+              //验证pubkey是否可以导出address
+              if (Wallet.address(caller.pubkey) != caller.address){
+                 reject (new Error("用户地址与提供的公钥不匹配！"))
+                 return
+              }
+              //验证sign是否正确
+              let assetsHash = utils.hashlib.sha256(JSON.stringify(assets))
+              if (! utils.ecc.verify(assetsHash,caller.sign,caller.pubkey)){
+                 reject (new Error("数据签名不合法！"))
+                 return
+              }
+              global.emitter.emit("setAssets",{
+                      from      :this.contractAddr,
+                      to        :caller.address,
+                      amount    :0,
+                      assets    :assets,
+                      lockTime  : lockTime
+                    },(err2,result2)=>{
+                      if (err2) return reject(err2)
+                      resolve([result2])
+                      logger.warn(`更新资源 ${JSON.stringify(assets)} 到 ${caller.address}的交易已提交,txHash=${[result2]}`)
+                }) 
+            }else{
+              if (that.caller && !caller) caller = that.caller
+              if (!caller)  return reject(new Error("必须指定caller地址"))
+              let account = await new Wallet(caller).catch(error=>{return reject(error)})
+              if (Array.isArray(this.assets.allowAddress)) {
+                  if (!this.assets.allowAddress.includes(account.address)){
+                     reject (new Error("用户地址不在许可列表中！"))
+                     return 
+                  }
+              }
+              if (encrypt) {
+                assets = utils.ecc.enCipher(assets,account.key.prvkey[0])
+              }
+              global.emitter.emit("trade",{
+                  from      :account.address,
+                  to        :this.contractAddr,
+                  amount    :amount,
+                  assets    :assets,
+                  lockTime : lockTime
+                },(err1,result1)=>{
+                  if (err1) return reject(err1)
+                  logger.warn(`${account.address}支付给${this.contractAddr}的交易已提交,txHash=${result1}`)
+                  resolve([result1])
+              })
             }
-            global.emitter.emit("trade",{
-                from      :account.address,
-                to        :this.contractAddr,
-                amount    :amount,
-                assets    :{},
-                lockTime : lockTime
-              },(err1,result1)=>{
-                if (err1) return reject(err1)
-                logger.warn(`${account.address}支付给${this.contractAddr}的交易已提交,txHash=${result1}`)
-                global.emitter.emit("setAssets",{
-                    from      :this.contractAddr,
-                    to        :account.address,
-                    amount    :0,
-                    assets    :assets,
-                    lockTime  : lockTime
-                  },(err2,result2)=>{
-                    if (err2) return reject(err2)
-                    resolve([result1,result2])
-                    logger.warn(`更新资源 ${JSON.stringify(assets)} 到 ${account.address}的交易已提交,txHash=${[result1,result2]}`)
-                })
-            })
           })
         }
-        async get(key=null,toAddr=null,list=false){
+        async get(key=null,fromAddr=null,list=false){
           return new Promise(async (resolve,reject)=>{
-            if (!this.isDeployed) return resolve({})
+            //测试时暂时关闭 
+            //if (!this.isDeployed) return resolve({})
             let assets = await global.blockchain.findContractAssets({
-              contractHash:this.contractHash,key:key,toAddr:toAddr,list:list}).catch(error=>{
+              contractHash:this.contractHash,key:key,fromAddr:fromAddr,list:list}).catch(error=>{
                 reject(error)
               })
             resolve(assets)
+          })
+        }
+        async ipfsCat(cid=null){
+          return new Promise(async (resolve,reject)=>{
+            //测试时暂时关闭
+            //if (!this.isDeployed) return resolve({})
+            let data = await global.emitter.emit("ipfsCat",cid,(err,result)=>{
+              if(err){
+                reject(err)
+              }else{
+                resolve(result)
+              }
+            }) 
+          })
+        }
+        async ipfsAdd(data=null){
+          return new Promise(async (resolve,reject)=>{
+            let cid = await global.emitter.emit("ipfsAdd",data,(err,result)=>{
+              if(err){
+                reject(err)
+              }else{
+                resolve(result)
+              }
+            }) 
           })
         }
       } //define Contract class
