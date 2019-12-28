@@ -319,6 +319,7 @@ class Transaction{
   static sign(inPrvkey,inPubkey,preNewTx){
     //type = "all","none","sigle"
     const  type = preNewTx.signType
+    console.log("?????????",preNewTx) //如果输入的地址没有tonken，那么即使交易费为0，系统也会找不到preNewTx.rawIns的记录而报错
     try{
       if (preNewTx.rawIns[0].index==-1) return preNewTx
       const rawIns=preNewTx.rawIns

@@ -1,5 +1,6 @@
 const fs=require('fs')
 const moment  = require('moment')
+const underscore = require('underscore')
 const deepmerge = require("deepmerge")
 const async = require("async")
 const utils = require("./utils.js")
@@ -136,6 +137,7 @@ class Contract{
       sandbox.request = require('request')
       sandbox.assert = require('assert')
       sandbox.deepmerge = deepmerge
+      sandbox.underscore = underscore
       sandbox.emitter = new EventEmitter()
       sandbox.nowE8   = (timestamp=null,formatStr=null)=>{
         if (timestamp){
