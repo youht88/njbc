@@ -704,15 +704,15 @@ app.get('/contract/title/:keyword',function(req,res){
     res.send(contract)
 })
 
-app.post('/contract/deploy',function(req,res){
+app.post('/contract/deploy',async function(req,res){
   const script = req.body.script
   const assets = req.body.assets
   logger.warn(assets)
   const owner  = req.body.owner
   const amount = req.body.amount
   const contract = new Contract({script,assets})
-  contract.deploy({owner,amount})
-  res.send('ok')
+  let result = await contract.deploy({owner,amount})
+  res.send(result)
 })
 
 /////////////// aggregate //////////////////////

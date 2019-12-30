@@ -140,7 +140,7 @@ class Node{
       this.transacted(data.value)
     })
 
-    global.emitter.on("deployContract",(data={})=>{
+    global.emitter.on("deployContract",(data={},cb)=>{
       logger.warn(data.owner)
       logger.warn(data.amount)
       logger.warn(data.assets)
@@ -154,8 +154,16 @@ class Node{
              assets  :data.assets,
              signNum :data.signNum,
              lockTime : data.lockTime})
-        .then((tx)=>logger.warn("合约部署已提交",tx.hash))
-        .catch((error)=>{throw error})
+        .then((tx)=>{
+            logger.warn("合约部署已提交",tx.hash)
+            if (cb){
+              cb(null,{"txHash":tx.hash,"contractHash":tx.outs[0].contractHash})
+            }
+          })
+        .catch((error)=>{
+            if (cb) cb(error,null)
+            throw error
+        })
     })
     global.emitter.on("trade",(data={},cb)=>{
       this.tradeTest({

@@ -1,7 +1,7 @@
 const fs=require('fs')
 const moment  = require('moment')
-const underscore = require('underscore')
 const deepmerge = require("deepmerge")
+const underscore = require("underscore")
 const async = require("async")
 const utils = require("./utils.js")
 const logger = utils.logger.getLogger()
@@ -44,11 +44,19 @@ class Contract{
     this.owner        = contractDict.owner
     return true      
   }
-  deploy({owner,amount,lockTime=0}){
-    if (!this.check()) return
-    let script = this.script
-    let assets = this.assets   
-    global.emitter.emit("deployContract",{owner,amount,script,assets,lockTime})  
+  async deploy({owner,amount,lockTime=0}){
+    return new Promise((resolve,reject)=>{
+      if (!this.check()){
+        return resolve("")
+      }
+      let script = this.script
+      let assets = this.assets   
+      global.emitter.emit("deployContract",{owner,amount,script,assets,lockTime},(err,result)=>{
+           if (err) return reject(err)
+           resolve(result)
+      })
+    
+    })
   }
   check(){
     if (!this.script && !this.contractHash) throw new Error("空的合约脚本")
@@ -137,7 +145,7 @@ class Contract{
       sandbox.request = require('request')
       sandbox.assert = require('assert')
       sandbox.deepmerge = deepmerge
-      sandbox.underscore = underscore
+      sandbox._ = underscore
       sandbox.emitter = new EventEmitter()
       sandbox.nowE8   = (timestamp=null,formatStr=null)=>{
         if (timestamp){
